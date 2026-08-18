@@ -5,10 +5,11 @@
  * opaque, so we can later switch to a composite cursor without breaking clients
  * that have a stale URL or a cached page.
  *
- * Correctness note: every paginated query MUST sort by its sort field *and* `id`.
- * Without the `id` tiebreaker, rows sharing a sort value (two products at the same
- * price, two same-second reviews) have no stable order, and pages can silently
- * duplicate or skip them.
+ * Correctness note: every paginated query MUST sort by its sort field *and* `id`. The
+ * tiebreaker is what makes the sort a total order, and it changes the SQL Prisma emits —
+ * a compound keyset predicate rather than a range scan with OFFSET 1. See the ORDER_BY
+ * block in lib/catalog/products.ts for the two generated forms and why the second is only
+ * accidentally correct.
  */
 
 export const DEFAULT_PAGE_SIZE = 24;

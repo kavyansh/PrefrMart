@@ -74,9 +74,25 @@ function toListItem(row: ListRow): ProductListItem {
 }
 
 /**
- * Sort definitions. Every one ends in `id` — that tiebreaker is what makes the sort
- * a total order, which is what makes cursor pagination correct. Without it, rows
- * sharing a price or rating can repeat across pages or vanish between them.
+ * Sort definitions. Every one ends in `id`, and that is load-bearing — it changes the SQL
+ * Prisma generates for a cursor page.
+ *
+ * With the `id` tiebreaker, Prisma emits a real compound keyset predicate:
+ *
+ *   WHERE (priceCents = <cursorPrice> AND id >= <cursorId>) OR (priceCents > <cursorPrice>)
+ *   ORDER BY priceCents ASC, id ASC
+ *
+ * Without it, Prisma falls back to a range scan plus an offset:
+ *
+ *   WHERE priceCents >= <cursorPrice> ORDER BY priceCents ASC LIMIT n OFFSET 1
+ *
+ * That second form is only correct if the engine returns tied rows in the same order on
+ * every query and the cursor row happens to be first in its tie group. Neither is
+ * guaranteed by SQL. It matters here: 405 of the 504 seeded products share a price with
+ * another, the largest price tie group is 17 rows, and the largest ratingAvg tie group is
+ * 72. SQLite's stable index scan means the fallback happens to work today, so
+ * tests/pagination.integration.test.ts does NOT fail if a tiebreaker is removed — it would
+ * break under a different query plan, a concurrent write, or another engine.
  */
 const ORDER_BY: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> = {
   // No text relevance scoring in SQLite without FTS; newest is the honest fallback.

@@ -25,18 +25,20 @@ import { createServer } from 'node:net';
 /**
  * Budgets in KB of gzipped, module-loaded JS.
  *
- * Context for these numbers: the Next 16 + React 19 App Router baseline measures
- * ~139KB gzipped on its own, before a single line of our client code. The original
- * 150KB target is therefore not reachable with this framework — see README.
- * BUDGET_KB is set to leave a workable margin above the measured floor; the far more
- * useful signal in day-to-day work is APP_CODE_BUDGET_KB, which measures only what we
- * add on top of the shared framework chunks.
+ * FRAMEWORK_FLOOR_KB is what Next 16 + React 19 ship on their own, measured with zero
+ * client components in the tree. The original 150KB first-load target is not reachable
+ * with this framework — see README. Re-measure and update this when upgrading Next.
+ *
+ * APP_CODE_BUDGET_KB is the number that actually reflects our own work: everything above
+ * the floor. It is the useful signal day to day, and it is what caught the whole of zod
+ * being pulled into the browser bundle by one const import (70KB).
  */
+const FRAMEWORK_FLOOR_KB = 138.8;
 const BUDGET_KB = 185;
 const APP_CODE_BUDGET_KB = 45;
 
 /** Routes to measure. Each must be reachable with a GET and return HTML. */
-const ROUTES = ['/'] as const;
+const ROUTES = ['/', '/c/electronics'] as const;
 
 const KB = 1024;
 
@@ -157,8 +159,14 @@ async function main(): Promise<void> {
       measurements.push(await measureRoute(baseUrl, route));
     }
 
-    // Chunks present on every measured route are the shared framework baseline;
-    // whatever is left is the code that route actually adds.
+    /*
+     * App code is measured against the recorded framework floor, not against the chunks
+     * routes have in common. An intersection sounds smarter but is useless in practice:
+     * when every route loads the same client bundle it reports 0 KB of app code no matter
+     * how large that bundle grows.
+     */
+    const floorBytes = FRAMEWORK_FLOOR_KB * KB;
+
     const shared = measurements
       .map((measurement) => new Set(measurement.urls))
       .reduce((intersection, urls) => {
@@ -166,25 +174,20 @@ async function main(): Promise<void> {
         return new Set([...intersection].filter((url) => urls.has(url)));
       }, null as Set<string> | null) ?? new Set<string>();
 
-    const first = measurements[0];
-    const sharedBytes = first
-      ? [...shared].reduce((sum, url) => sum + (first.sizes.get(url) ?? 0), 0)
-      : 0;
-
-    console.log(`\nShared framework baseline: ${formatKb(sharedBytes)} (${shared.size} chunks)`);
-    console.log('─'.repeat(64));
+    console.log(`\nFramework floor: ${FRAMEWORK_FLOOR_KB} KB · ${shared.size} chunks shared across routes`);
+    console.log('─'.repeat(70));
 
     const failures: string[] = [];
 
     for (const measurement of measurements) {
-      const appBytes = measurement.totalBytes - sharedBytes;
+      const appBytes = measurement.totalBytes - floorBytes;
       const overTotal = measurement.totalBytes > BUDGET_KB * KB;
       const overApp = appBytes > APP_CODE_BUDGET_KB * KB;
 
       const flag = overTotal || overApp ? 'FAIL' : 'ok  ';
       console.log(
-        `${flag} ${measurement.route.padEnd(24)} total ${formatKb(measurement.totalBytes).padStart(9)}` +
-          `   route-specific ${formatKb(appBytes).padStart(9)}`,
+        `${flag} ${measurement.route.padEnd(30)} total ${formatKb(measurement.totalBytes).padStart(9)}` +
+          `   app code ${formatKb(appBytes).padStart(9)}`,
       );
 
       if (overTotal) {
@@ -194,13 +197,14 @@ async function main(): Promise<void> {
       }
       if (overApp) {
         failures.push(
-          `${measurement.route}: route-specific JS ${formatKb(appBytes)} exceeds ${APP_CODE_BUDGET_KB} KB`,
+          `${measurement.route}: app code ${formatKb(appBytes)} above the framework floor ` +
+            `exceeds ${APP_CODE_BUDGET_KB} KB`,
         );
       }
     }
 
-    console.log('─'.repeat(64));
-    console.log(`Budgets: total ${BUDGET_KB} KB · route-specific ${APP_CODE_BUDGET_KB} KB (gzipped)`);
+    console.log('─'.repeat(70));
+    console.log(`Budgets: total ${BUDGET_KB} KB · app code ${APP_CODE_BUDGET_KB} KB (gzipped)`);
 
     if (failures.length > 0) {
       console.error('\nBundle budget exceeded:');

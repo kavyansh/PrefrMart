@@ -20,7 +20,7 @@ import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /** Pages whose HTML must be nonce-stamped. Add every new page route here. */
-const HTML_ROUTES = ['/'] as const;
+const HTML_ROUTES = ['/', '/c/electronics', '/?minRating=4&inStock=true'] as const;
 
 let server: ChildProcess | undefined;
 let baseUrl = '';
@@ -137,6 +137,29 @@ describe('Content-Security-Policy', () => {
           'This usually means the route became static — it must be force-dynamic.',
       ).toEqual([]);
     });
+  });
+});
+
+describe('HTTP status codes', () => {
+  it('returns a real 404 for an unknown category, not a soft 404', async () => {
+    /*
+     * `notFound()` renders the right page but leaves the status at 200 on a streamed
+     * response in Next 16, so the status is set in proxy.ts instead. A soft 404 tells
+     * crawlers a broken URL is a real page and hides dead links from monitoring.
+     */
+    const response = await fetch(`${baseUrl}/c/not-a-real-category`);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain('Category not found');
+  });
+
+  it('serves valid categories normally', async () => {
+    const response = await fetch(`${baseUrl}/c/books`);
+    expect(response.status).toBe(200);
+  });
+
+  it('still 404s a route that does not exist at all', async () => {
+    const response = await fetch(`${baseUrl}/no-such-page-at-all`);
+    expect(response.status).toBe(404);
   });
 });
 

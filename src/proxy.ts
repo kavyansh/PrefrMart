@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { CATEGORY_BY_SLUG } from '@/lib/catalog/taxonomy';
 
 /**
  * Per-request Content-Security-Policy with a nonce.
@@ -21,6 +22,24 @@ import { NextResponse, type NextRequest } from 'next/server';
  * on such a page would be blocked. Any page added here must therefore be dynamic —
  * `export const dynamic = 'force-dynamic'`. Verified by tests/security.test.ts.
  */
+
+/**
+ * `notFound()` cannot set a 404 status on a streamed response in Next 16 — it renders the
+ * correct not-found page but the status is already committed, giving a soft 404 that tells
+ * crawlers and uptime monitors a broken URL is fine. Verified against 16.3.1 with a
+ * synchronous `notFound()` in a static route: still 200.
+ *
+ * The proxy runs before rendering, so this is where the status can still be set. The
+ * category slugs are a closed static set, so checking them here is cheap and exact; the
+ * page still calls `notFound()` to render the body.
+ */
+function notFoundStatus(request: NextRequest): number | undefined {
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith('/c/')) return undefined;
+
+  const slug = pathname.slice('/c/'.length).replace(/\/$/, '');
+  return CATEGORY_BY_SLUG.has(slug) ? undefined : 404;
+}
 
 export default function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
@@ -54,7 +73,10 @@ export default function proxy(request: NextRequest) {
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('content-security-policy', csp);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+    status: notFoundStatus(request),
+  });
   response.headers.set('content-security-policy', csp);
 
   return response;

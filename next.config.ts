@@ -15,11 +15,6 @@ const nextConfig: NextConfig = {
     imageSizes: [64, 96, 128, 192, 256],
   },
 
-  experimental: {
-    // Ship only the icon/primitive modules actually referenced.
-    optimizePackageImports: ['@radix-ui/react-dialog'],
-  },
-
   async headers() {
     // Note: CSP is set per-request in middleware.ts because it carries a nonce.
     // Everything here is static and safe to send from config.

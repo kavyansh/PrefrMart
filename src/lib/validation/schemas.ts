@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MAX_PAGE_SIZE } from '@/lib/pagination';
+import { PRODUCT_SORTS, REVIEW_SORTS } from '@/lib/catalog/sorts';
 
 /**
  * Every value crossing the network boundary is parsed here first.
@@ -9,8 +10,10 @@ import { MAX_PAGE_SIZE } from '@/lib/pagination';
  * affordance; the server-side parse is the actual trust boundary.
  */
 
-export const PRODUCT_SORTS = ['relevance', 'newest', 'price-asc', 'price-desc', 'rating'] as const;
-export type ProductSort = (typeof PRODUCT_SORTS)[number];
+// Re-exported for server-side callers already importing from this module. Client
+// components must import from '@/lib/catalog/sorts' directly — importing from here pulls
+// zod into the browser bundle.
+export { PRODUCT_SORTS, type ProductSort } from '@/lib/catalog/sorts';
 
 /** Cursor is a base64url token; `decodeCursor` does the real structural check. */
 const cursorSchema = z
@@ -46,7 +49,7 @@ export const productListQuerySchema = z.object({
 
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 
-export const reviewSortSchema = z.enum(['newest', 'highest', 'lowest']).optional();
+export const reviewSortSchema = z.enum(REVIEW_SORTS).optional();
 
 export const reviewListQuerySchema = z.object({
   cursor: cursorSchema,
