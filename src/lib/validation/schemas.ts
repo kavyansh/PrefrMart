@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_PAGE_SIZE } from '@/lib/pagination';
 import { PRODUCT_SORTS, REVIEW_SORTS } from '@/lib/catalog/sorts';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwordPolicy';
 
 /**
  * Every value crossing the network boundary is parsed here first.
@@ -72,6 +73,36 @@ export const createReviewSchema = z.object({
 });
 
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+
+/**
+ * Credentials. The email is lowercased on parse so "Asha@Example.com" and
+ * "asha@example.com" cannot become two accounts.
+ *
+ * Note the asymmetry: signup enforces a minimum password length, login does not. Applying
+ * the rule at login would reject a legitimate older password and, worse, let an attacker
+ * distinguish "too short" from "wrong" — a small oracle about stored credentials.
+ */
+export const credentialsSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3)
+    .max(254)
+    .refine((value) => value.includes('@'), 'Enter a valid email address.'),
+  password: z.string().min(1, 'Enter your password.').max(MAX_PASSWORD_LENGTH),
+});
+
+export const signupSchema = credentialsSchema.extend({
+  name: z.string().trim().min(1, 'Enter your name.').max(80),
+  password: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters.`)
+    .max(MAX_PASSWORD_LENGTH),
+});
+
+export type CredentialsInput = z.infer<typeof credentialsSchema>;
+export type SignupInput = z.infer<typeof signupSchema>;
 
 /** Parse URLSearchParams into a plain object Zod can read. */
 export function searchParamsToObject(params: URLSearchParams): Record<string, string> {

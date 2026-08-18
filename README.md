@@ -80,11 +80,31 @@ a per-card aggregate query.
 `PrismaClient` through the `better-sqlite3` driver adapter — Prisma 7 removed `url` from
 the schema's `datasource` block.
 
+**Reviews.** One per user per product, enforced by a `@@unique([productId, userId])`
+constraint — the pre-check is racy by nature, so a unique violation is caught and turned into
+the same clean 409. Writing a review and recomputing the product's aggregates happen in one
+transaction, and the average is re-derived from an aggregate query rather than nudged, so a
+transient failure cannot leave it permanently skewed.
+
 **Security.** A per-request nonce CSP is set in `src/proxy.ts` (Next 16's rename of
-`middleware.ts`); static headers are in `next.config.ts`. Passwords use `node:crypto`
-scrypt with per-user salts and constant-time comparison. `react/no-danger` is an ESLint
-error, so nothing in the tree can inject raw HTML. Every route handler parses its input
+`middleware.ts`); static headers are in `next.config.ts`. Sessions are HS256 JWTs in an
+httpOnly cookie — unreadable from JavaScript, so an XSS payload cannot exfiltrate one, which a
+token in localStorage would not survive. Verification pins `algorithms: ['HS256']`, without
+which an `alg: none` token forges a session. Passwords use `node:crypto` scrypt with per-user
+salts and constant-time comparison. `react/no-danger` is an ESLint error project-wide, with a
+single scoped exemption in `components/seo/JsonLd.tsx`. Every route handler parses its input
 through a Zod schema before touching the database.
+
+**CSRF.** `SameSite=Lax` plus an origin check on every mutating route. Note the check compares
+`Origin` against the `Host` header, **not** `request.nextUrl.origin` — measured on Next 16.3.1,
+that property is normalised to `http://localhost:<port>` regardless of the host the request
+arrived on, so comparing against it rejects legitimate same-origin requests and breaks every
+form behind a proxy or real hostname. See `src/lib/api/request.ts`.
+
+**Login does not leak which accounts exist.** Unknown email and wrong password return the same
+message, and the unknown-email path still spends a scrypt verification against a throwaway
+hash — otherwise response time alone answers "is this address registered?", which is how
+target lists get built before a credential-stuffing run.
 
 ### Why every page is `force-dynamic`
 
@@ -169,18 +189,36 @@ mobile sheet — costs **7.9 KB**.
 If the hard 150 KB total matters more than the framework, that is a framework decision
 (Astro/SvelteKit with islands would clear it), not something tuning can reach.
 
+### Known limitation: soft 404 on unknown product URLs
+
+`/c/<unknown>` returns a real 404 because the category slugs are a closed static set the Edge
+proxy can check. `/p/<unknown>` returns the correct "Page not found" body with **HTTP 200**,
+because product slugs are not a closed set and `ProxyConfig` in Next 16.3.1 has no `runtime`
+option — the proxy is Edge-only and cannot reach Prisma.
+
+Deliberately not worked around: hardcoding 504 slugs into the proxy would not survive a real
+catalog, and an internal HEAD request per product page view doubles the request count to fix a
+status code. The user-visible behaviour is correct; only crawlers and uptime monitors are
+misinformed. Revisit when `notFound()` sets the status, or when the proxy can run on Node.
+
 ## Status
 
-**Phases 1-2 of 6 complete.**
+**Phases 1-3 of 6 complete.** 148 tests.
 
 - **P1** — foundation, Prisma schema, deterministic seed, design tokens, cursor pagination,
   nonce CSP, product listing API, verification harness.
 - **P2** — product listing pages (home and category) with cursor-driven infinite scroll,
   URL-based filters and sort, mobile filter sheet and desktop rail, skeleton/empty/error
   states, back-navigation restore, real 404s.
+- **P3** — product detail page: gallery, price, stock, specs, rating distribution, related
+  products, `Product` JSON-LD. Cursor-paginated sortable reviews and a review form gated on
+  auth. Session handling, login/logout/me endpoints, CSRF origin checks and rate limiting.
 
-Not yet built: product page and review submission (P3), auth and settings (P4), cart and
-checkout (P5), search, offline/PWA and the a11y pass (P6).
+**Not yet wired: add to cart.** The PDP shows price, stock and delivery but no cart button —
+the cart is Phase 5, and a control that does nothing is worse than an absent one.
+
+Not yet built: sign-in UI and route guards, settings and orders (P4), cart and checkout (P5),
+search, offline/PWA and the a11y pass (P6).
 
 **Deliberately out of scope:** voice commands, and real image-similarity search — the
 image search shipping in Phase 6 is a labelled stub behind `lib/search/imageStub.ts`.

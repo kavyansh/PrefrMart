@@ -36,8 +36,9 @@ const PARAMS = { N: 32_768, r: 8, p: 1 } as const;
 // scrypt needs maxmem >= 128 * N * r, plus headroom.
 const MAX_MEM = 128 * PARAMS.N * PARAMS.r * 2;
 
-export const MIN_PASSWORD_LENGTH = 8;
-export const MAX_PASSWORD_LENGTH = 200;
+// Re-exported for existing callers; defined in passwordPolicy.ts so the schemas can read
+// them without importing node:crypto.
+export { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '@/lib/auth/passwordPolicy';
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_LENGTH);

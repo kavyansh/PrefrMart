@@ -20,7 +20,12 @@ import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /** Pages whose HTML must be nonce-stamped. Add every new page route here. */
-const HTML_ROUTES = ['/', '/c/electronics', '/?minRating=4&inStock=true'] as const;
+const HTML_ROUTES = [
+  '/',
+  '/c/electronics',
+  '/?minRating=4&inStock=true',
+  '/p/kestrel-ultra-webcam-gen-3',
+] as const;
 
 let server: ChildProcess | undefined;
 let baseUrl = '';
