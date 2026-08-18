@@ -28,6 +28,8 @@ const HTML_ROUTES = [
   '/login',
   '/signup',
   '/cart',
+  '/search?q=headphones',
+  '/offline',
 ] as const;
 
 /**

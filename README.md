@@ -48,6 +48,7 @@ share the same password but are not intended as sign-in accounts.
 | `npm run db:reset` | Drop, re-migrate and re-seed |
 | `npm run gen:images` | Regenerate placeholder product art |
 | `npm run check:bundle` | Measure real gzipped first-load JS per route |
+| `npm run check:a11y` | Colour-contrast and page-structure audit (diagnostic, not a gate) |
 
 ## Architecture notes
 
@@ -196,6 +197,119 @@ merges is our own static `prisma.config.ts`, not untrusted input. `npm audit fix
 would downgrade to `prisma@6.12`, which breaks the Prisma 7 schema and adapter setup.
 Left as-is deliberately; revisit when Prisma bumps the dependency.
 
+## Search
+
+Text search reuses `listProducts({ q })` and the same `ProductList` as the catalog, so results
+paginate, filter and sort identically — a second search-results implementation would be a second
+place for pagination to be subtly wrong. Typeahead suggestions come from
+`/api/search/suggest` and use the *same* `searchText` predicate as the results page, so a
+suggestion can never lead somewhere that returns nothing.
+
+The search box is a real combobox — `role="combobox"` with `aria-expanded`, `aria-controls` and
+`aria-activedescendant` over a `role="listbox"`. That is what makes arrow keys and screen-reader
+announcement work; an input with a div of clickable results looks identical and is unusable without a
+mouse. The form also has a real `action="/search"`, so search works before hydration and with
+JavaScript off.
+
+### Image search is a STUB
+
+Worth being blunt, because the machinery around it is convincing. The upload works, camera capture
+works on a phone, the file is genuinely validated, and the results render like any other product
+grid. **No image analysis happens.**
+
+`lib/search/imageStub.ts` derives a seed from the uploaded bytes and uses it to pick an arbitrary but
+stable set of products — so the same photo always returns the same results, which makes the feature
+demonstrable, while a different photo returns different ones. That is the whole trick. The UI labels
+it as a stub in two places, and the API response carries `isStub: true` so the label cannot be
+dropped downstream.
+
+What *is* real is the validation, and it matters regardless: 4MB cap, MIME allow-list, and a
+magic-byte check on the actual file signature — which is the only one of the three that cannot be
+defeated by renaming a file or setting a header. A text file renamed `.png` with `Content-Type:
+image/png` is rejected. The bytes are never written to disk.
+
+Replacing the stub with real search means changing one function: produce an embedding for the
+uploaded bytes, compare against embeddings stored per product, return the nearest. The route,
+validation, UI and rendering all stay.
+
+## Offline and the service worker
+
+`public/sw.js` is **hand-written**. The plan was `@serwist/next`, which states outright that it does
+not support Turbopack — and Next 16 builds with Turbopack. The alternatives were regressing to
+webpack builds or adopting an experimental package. Hand-writing it costs ~230 lines, adds no
+dependency, and buys the thing that matters most here: complete control over what is cached.
+
+The rule that governs the whole file: **never cache anything user-specific.** A cached order page or
+cart response on a shared device is a data leak, and a service-worker cache outlives a sign-out. The
+deny-list is checked before any strategy runs, and covers `/account`, `/orders`, `/checkout`,
+`/login`, `/signup`, `/api/auth/*`, `/api/cart*`, `/api/account/*`, `/api/orders` and
+`/api/search/image`.
+
+| What | Strategy |
+|---|---|
+| `/_next/static/*` | Cache-first — content-hashed, so a hit is always correct |
+| `/img/*`, `/_next/image` | Cache-first, capped at 120 entries |
+| `/api/products`, `/api/search/suggest` | Stale-while-revalidate, capped at 60 |
+| Page navigations | Network-first → cached page → `/offline` |
+
+Navigations are network-first, not cache-first: a storefront showing yesterday's prices is worse than
+one that takes an extra moment. Cached HTML is stored with its own headers, including the per-request
+CSP and nonce, so a replayed page stays internally consistent — serving cached HTML under a freshly
+generated nonce would block every script on it.
+
+Registered in production only. A service worker in development serves stale chunks after every edit,
+which looks exactly like a broken hot reload.
+
+`public/sw.js` sits outside both `tsc` and ESLint, so a syntax error there would ship silently.
+`npm run typecheck` runs `node --check` on it for that reason.
+
+### Orders placed offline
+
+An order submitted with no network is queued in IndexedDB and replayed when the connection returns.
+This is only safe because of the idempotency key: it is generated once when the checkout flow mounts,
+so a replay that races a request which *did* get through produces one order, not two. Retrying
+without one is a coin flip between "no order" and "two orders".
+
+Replay is driven by the page's `online` event, not the Background Sync API. Background Sync would
+survive the tab closing, which is genuinely better, but it is Chromium-only and needs the service
+worker to hold credentials and interpret failures. The page-driven version works everywhere and fails
+visibly; the trade is that the tab has to stay open, and the UI says so.
+
+A 4xx other than 429 drops the queued order rather than retrying a rejection forever. A 5xx or
+network failure keeps its place, up to five attempts.
+
+**One IndexedDB opener.** `lib/idb.ts` owns the database version and store list. This exists because
+of a bug: the cart opened `tender` at v1 while the order queue opened it at v2, and IndexedDB refuses
+to open at a lower version than it currently has — so whichever ran second failed, and which one that
+was depended on whether the shopper visited the cart or checked out first.
+
+## Accessibility
+
+`npm run check:a11y` audits two things a machine can check reliably, reading colour values straight
+out of `globals.css` so it cannot drift from the design:
+
+- **Contrast** for every foreground/background pair the UI actually renders, against WCAG AA (4.5:1
+  text, 3:1 large text and UI boundaries). It found four real failures, all now fixed:
+  `fg-subtle` at 3.87:1, `border-strong` at 1.86:1, and the filled star at 2.15:1. Each replacement
+  was solved against *both* `surface` and `surface-sunken`, since most appear on either.
+- **Structure** on eight routes: one `h1`, a `main` landmark and skip-link target, `lang`, named
+  `nav` regions, `alt` on every image, an accessible name on every input, no positive `tabindex`, no
+  restricted zoom.
+
+`--color-star-empty` is the one deliberate exception at 1.44:1. It is the *unfilled* part of a rating
+track and is meant to recede; at 3:1 an empty star reads as filled. Exempt under WCAG 1.4.11 because
+the stars are `aria-hidden` and the rating is also given as text — the graphic is decorative, not the
+only route to the information.
+
+Beyond the audit: 44px minimum touch targets throughout, `prefers-reduced-motion` respected, visible
+focus rings never removed, `aria-live` on cart totals and search results, and infinite scroll always
+backed by a real "Load more" button because an IntersectionObserver is unreachable by keyboard.
+
+What the audit cannot check: focus order, whether an `aria-label` reads sensibly, or anything needing
+a real accessibility tree. Those need a browser and a person.
+
+**Voice commands remain out of scope** — see the top of this file.
+
 ## Product images
 
 Product art is **generated SVG placeholders**, not photography — deterministic gradients
@@ -267,15 +381,23 @@ consecutive runs: identical each time.
 
 ### What the tests do not cover
 
-Everything is verified against a real server and database, but there is **no browser in the loop
-yet** (Playwright arrives in Phase 6). So the following are reasoned and unit-tested but not
-observed end to end: IntersectionObserver firing for infinite scroll, sessionStorage scroll
-restore, IndexedDB persistence, and the cart and checkout UI after hydration — `curl` sees only
-the pre-hydration skeleton on those routes.
+There is **no browser in the loop**. Playwright was considered and deliberately dropped, so the
+following are reasoned, hand-verified against a real server where possible, and unit-tested where the
+logic is pure — but never *observed* running in a browser:
+
+- IntersectionObserver firing for infinite scroll, and sessionStorage scroll restore
+- IndexedDB persistence, and the guest→signed-in cart merge as triggered by the provider
+- The cart and checkout UI after hydration — `curl` sees only the pre-hydration skeleton
+- Service worker installation, caching behaviour and offline replay
+- Whether the combobox actually announces correctly in a screen reader
+
+The pure logic behind most of that *is* covered — cart merge and clamping, card validation,
+cursor pagination, the CSRF origin check, session token verification, open-redirect sanitising. The
+wiring between them is not.
 
 ## Status
 
-**Phases 1-5 of 6 complete.** 256 tests.
+**All six phases complete.** 258 tests.
 
 - **P1** — foundation, Prisma schema, deterministic seed, design tokens, cursor pagination,
   nonce CSP, product listing API, verification harness.
@@ -292,9 +414,13 @@ the pre-hydration skeleton on those routes.
 - **P5** — IndexedDB guest cart, server cart for signed-in users, merge on sign-in, cart page with
   quantity steppers and stock clamping, header badge, and a four-step checkout (address →
   delivery → mock payment → review) placing orders transactionally with idempotency.
+- **P6** — text search with a real combobox and typeahead, the labelled image-search stub, a
+  hand-written service worker with offline caching and an offline page, an offline order queue with
+  idempotent replay, and a contrast/structure accessibility audit that found and fixed four real
+  failures.
 
-Not yet built: search including the image-search stub, offline/PWA, and the accessibility pass
-(P6).
+Deliberately not built: **Playwright and any further tests** (dropped on request), **voice commands**,
+and **real image similarity**.
 
 **Deliberately out of scope:** voice commands, and real image-similarity search — the
 image search shipping in Phase 6 is a labelled stub behind `lib/search/imageStub.ts`.

@@ -8,6 +8,7 @@ import { AddressStep, type AddressDraft } from '@/components/checkout/AddressSte
 import { DeliveryStep } from '@/components/checkout/DeliveryStep';
 import { PaymentStep, type PaymentDraft } from '@/components/checkout/PaymentStep';
 import { ReviewStep } from '@/components/checkout/ReviewStep';
+import { enqueueOrder } from '@/lib/orders/queue';
 import { computeTotals, formatMoney, type DeliveryOption } from '@/lib/money';
 
 /**
@@ -68,6 +69,7 @@ export function CheckoutFlow({
 
   const [isPlacing, setIsPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [isQueued, setIsQueued] = useState(false);
 
   /*
    * Generated once when the flow mounts. A key per submit would defeat the point: two taps would
@@ -98,17 +100,19 @@ export function CheckoutFlow({
     setIsPlacing(true);
     setPlaceError(null);
 
+    const body = {
+      idempotencyKey,
+      deliveryOption,
+      // Exactly one of these; the API rejects both or neither.
+      ...(newAddress === null ? { addressId: selectedAddressId } : { address: newAddress }),
+      paymentLabel: payment.label,
+    };
+
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          idempotencyKey,
-          deliveryOption,
-          // Exactly one of these; the API rejects both or neither.
-          ...(newAddress === null ? { addressId: selectedAddressId } : { address: newAddress }),
-          paymentLabel: payment.label,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (response.ok) {
@@ -128,11 +132,35 @@ export function CheckoutFlow({
       // A stock rejection means the cart view is stale; re-read it so the shopper sees why.
       await refresh();
     } catch {
-      setPlaceError('Could not reach the server. Check your connection and try again.');
+      /*
+       * A thrown fetch means the request never reached the server, so queue it.
+       *
+       * This is only safe because of the idempotency key: it was generated once when this flow
+       * mounted, so a replay that races a request which did in fact get through produces one order
+       * rather than two. Retrying without one would be a coin flip between "no order" and "two".
+       *
+       * Note the asymmetry with an HTTP error above — a 4xx is a decision, and queueing it would
+       * just repeat a rejection forever.
+       */
+      await enqueueOrder(idempotencyKey, body as Parameters<typeof enqueueOrder>[1]);
+      setIsQueued(true);
     } finally {
       setIsPlacing(false);
     }
   }, [payment, idempotencyKey, deliveryOption, newAddress, selectedAddressId, refresh, router]);
+
+  if (isQueued) {
+    return (
+      <div role="status" className="rounded-lg border border-info/30 bg-info-soft p-4">
+        <h2 className="text-base font-semibold text-info">Order saved and waiting to send</h2>
+        <p className="mt-1 text-sm text-info">
+          You appear to be offline, so we have saved this order on your device. It will be submitted
+          automatically as soon as you are back online — keep this tab open. You will not be charged
+          twice if it turns out the order already went through.
+        </p>
+      </div>
+    );
+  }
 
   if (isLoading && view === null) {
     return <p className="text-sm text-fg-muted">Loading your cart…</p>;

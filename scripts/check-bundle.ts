@@ -42,7 +42,14 @@ const BUDGET_KB = 185;
 const APP_CODE_BUDGET_KB = 45;
 
 /** Routes to measure. Each must be reachable with a GET and return HTML. */
-const ROUTES = ['/', '/c/electronics', '/p/kestrel-ultra-webcam-gen-3', '/login', '/cart'] as const;
+const ROUTES = [
+  '/',
+  '/c/electronics',
+  '/p/kestrel-ultra-webcam-gen-3',
+  '/login',
+  '/cart',
+  '/search?q=headphones',
+] as const;
 
 const KB = 1024;
 

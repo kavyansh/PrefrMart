@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { CartProvider } from '@/components/cart/CartProvider';
+import { OfflineBanner } from '@/components/pwa/OfflineBanner';
+import { QueuedOrderReplayer } from '@/components/pwa/QueuedOrderReplayer';
+import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { getSessionUserId } from '@/lib/auth/session';
 import './globals.css';
 
@@ -12,6 +15,12 @@ export const metadata: Metadata = {
     'A mobile-first storefront demo: browse a large catalog, search, review products, and check out.',
   applicationName: 'Tender',
   formatDetection: { telephone: false },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Tender',
+    statusBarStyle: 'black-translucent',
+  },
 };
 
 export const viewport: Viewport = {
@@ -47,7 +56,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           Skip to main content
         </a>
-        <CartProvider userId={userId}>{children}</CartProvider>
+        <CartProvider userId={userId}>
+          {/*
+            Both banners sit above the header so they push content down rather than covering it —
+            an overlay on a sticky header hides the search box exactly when someone is trying to
+            work out why nothing is loading.
+          */}
+          <OfflineBanner />
+          <QueuedOrderReplayer />
+          {children}
+        </CartProvider>
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );

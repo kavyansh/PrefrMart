@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CartBadge } from '@/components/cart/CartBadge';
+import { SearchBox } from '@/components/search/SearchBox';
 import { getCurrentUser } from '@/lib/auth/currentUser';
 import { listCategories } from '@/lib/catalog/products';
 
@@ -21,8 +22,13 @@ export async function Header() {
           Tender
         </Link>
 
-        {/* Search lands here in Phase 6. */}
-        <div className="flex-1" />
+        {/*
+          Search sits between the wordmark and the account links, and takes the remaining width.
+          On a phone that is most of the bar, which is the right priority for a storefront.
+        */}
+        <div className="min-w-0 flex-1">
+          <SearchBox />
+        </div>
 
         <nav aria-label="Account and cart" className="flex items-center gap-1">
           {user === null ? (

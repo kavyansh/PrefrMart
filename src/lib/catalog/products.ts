@@ -170,6 +170,25 @@ export async function listProducts(query: ProductListQuery): Promise<Page<Produc
   return { items: page.items.map(toListItem), nextCursor: page.nextCursor };
 }
 
+/**
+ * Resolve an explicit list of product ids into list items, preserving the given order.
+ *
+ * Order preservation is the point: image search returns ids ranked by (notional) similarity, and a
+ * database `IN` clause returns them in whatever order it likes. Re-sorting to match the input is
+ * what keeps a ranked result ranked.
+ */
+export async function resolveProductsByIds(ids: string[]): Promise<ProductListItem[]> {
+  if (ids.length === 0) return [];
+
+  const rows = await db.product.findMany({
+    where: { id: { in: ids } },
+    select: LIST_SELECT,
+  });
+
+  const byId = new Map(rows.map((row) => [row.id, toListItem(row)]));
+  return ids.map((id) => byId.get(id)).filter((item): item is ProductListItem => item !== undefined);
+}
+
 export async function listCategories() {
   return db.category.findMany({
     orderBy: { sortRank: 'asc' },

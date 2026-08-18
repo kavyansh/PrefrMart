@@ -161,6 +161,11 @@ export const placeOrderSchema = z.object({
 
 export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
 
+/** Search query. Capped so a pathological string cannot become an expensive LIKE scan. */
+export const searchQuerySchema = z.object({
+  q: z.string().trim().max(120).optional(),
+});
+
 export const orderListQuerySchema = z.object({
   cursor: cursorSchema,
   limit: queryInt(1, MAX_PAGE_SIZE),

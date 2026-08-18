@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && node --check public/sw.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:images": "tsx scripts/gen-images.ts",
@@ -21,8 +21,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force && npm run db:seed",
     "check:bundle": "tsx scripts/check-bundle.ts",
-    "verify": "npm run typecheck && npm run lint && npm run build && npm test && npm run check:bundle",
-    "e2e": "playwright test"
+    "check:a11y": "tsx scripts/check-a11y.ts",
+    "verify": "npm run typecheck && npm run lint && npm run build && npm test && npm run check:bundle"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

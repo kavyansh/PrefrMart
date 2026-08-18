@@ -4,9 +4,20 @@
  * Design tokens. Tailwind v4 generates utilities from @theme, so every colour used
  * in the app is named here and nowhere else — no ad-hoc hex values in components.
  *
- * Contrast: every --color-*-fg token is checked to at least WCAG AA (4.5:1) against
- * its paired surface. The amber brand colour is deliberately paired with near-black
- * text, because white on amber does not pass.
+ * Contrast: every pair the UI actually renders is checked against WCAG AA — 4.5:1 for text, 3:1 for
+ * large text and UI boundaries — by `npx tsx scripts/check-a11y.ts`, which reads these values
+ * straight out of this file so the audit cannot drift from the design. The amber brand colour is
+ * deliberately paired with near-black text, because white on amber does not pass.
+ *
+ * Four values here were darkened after that audit failed them. The comments record the measured
+ * ratios, and each is solved against BOTH `surface` and `surface-sunken`, since most of them appear
+ * on either.
+ *
+ * `--color-star-empty` is the one deliberate exception, at 1.44:1. It is the *unfilled* portion of a
+ * rating track and is meant to recede; raising it to 3:1 would make empty stars read as filled,
+ * which is worse for comprehension than a faint one. It is exempt under WCAG 1.4.11 because the
+ * stars carry `aria-hidden` and the rating is conveyed as text beside them — the graphic is
+ * decorative, not the only way to get the information.
  */
 @theme {
   /* Brand */
@@ -21,12 +32,12 @@
   --color-surface-sunken: #f4f6f8;
   --color-surface-raised: #ffffff;
   --color-border: #d9dee4;
-  --color-border-strong: #b6bfc9;
+  --color-border-strong: #898f97; /* 3.26:1 — input borders must be discernible */
 
   /* Text */
   --color-fg: #14202b;
   --color-fg-muted: #5a6874;
-  --color-fg-subtle: #78838d;
+  --color-fg-subtle: #69727b; /* 4.89:1 on surface, 4.51:1 on surface-sunken */
   --color-fg-inverse: #ffffff;
 
   /* Status */
@@ -44,7 +55,7 @@
   --color-deal: #b3261e;
 
   /* Rating stars */
-  --color-star: #f0a020;
+  --color-star: #c2811a; /* 3.26:1 */
   --color-star-empty: #d2d8de;
 
   /* Radii */
