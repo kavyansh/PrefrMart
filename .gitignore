@@ -1,0 +1,28 @@
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.pem
+
+# env
+.env
+.env*.local
+!.env.example
+
+# database (regenerate with `pnpm db:reset`)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+prisma/generated/
+
+# generated seed art (regenerate with `pnpm gen:images`)
+public/img/p/
+
+# test / tooling output
+coverage/
+playwright-report/
+test-results/
+tsconfig.tsbuildinfo
+next-env.d.ts

@@ -1,0 +1,192 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Tailwind v4 generates utilities from @theme, so every colour used
+ * in the app is named here and nowhere else — no ad-hoc hex values in components.
+ *
+ * Contrast: every --color-*-fg token is checked to at least WCAG AA (4.5:1) against
+ * its paired surface. The amber brand colour is deliberately paired with near-black
+ * text, because white on amber does not pass.
+ */
+@theme {
+  /* Brand */
+  --color-ink: #0d1b2a;
+  --color-ink-soft: #16324a;
+  --color-accent: #ffb020;
+  --color-accent-strong: #e0930a;
+  --color-accent-fg: #21170a;
+
+  /* Semantic surfaces (light) */
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f4f6f8;
+  --color-surface-raised: #ffffff;
+  --color-border: #d9dee4;
+  --color-border-strong: #b6bfc9;
+
+  /* Text */
+  --color-fg: #14202b;
+  --color-fg-muted: #5a6874;
+  --color-fg-subtle: #78838d;
+  --color-fg-inverse: #ffffff;
+
+  /* Status */
+  --color-success: #0f7a4a;
+  --color-success-soft: #e5f5ec;
+  --color-danger: #b3261e;
+  --color-danger-soft: #fdecea;
+  --color-warning: #8a5a00;
+  --color-warning-soft: #fff4e0;
+  --color-info: #0b5f8a;
+  --color-info-soft: #e6f2f8;
+
+  /* Price / deals */
+  --color-price: #14202b;
+  --color-deal: #b3261e;
+
+  /* Rating stars */
+  --color-star: #f0a020;
+  --color-star-empty: #d2d8de;
+
+  /* Radii */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Layout */
+  --spacing-header: 3.5rem;
+  --spacing-tabbar: 3.75rem;
+  --container-page: 90rem;
+
+  /* Motion — every transition references these so reduced-motion can zero them out */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Fonts: system stack only. A webfont would cost a render-blocking round trip
+     and real bytes against the 150KB budget for no functional gain here. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Dark mode: only the semantic tokens flip. Brand and status hues are re-tuned for
+   the darker ground rather than reused, so contrast holds in both themes. */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: #10181f;
+    --color-surface-sunken: #0b1116;
+    --color-surface-raised: #18232c;
+    --color-border: #2b3946;
+    --color-border-strong: #3d4d5c;
+
+    --color-fg: #e8edf2;
+    --color-fg-muted: #a3b0bc;
+    --color-fg-subtle: #8593a0;
+    --color-fg-inverse: #10181f;
+
+    --color-success: #4ec38a;
+    --color-success-soft: #102a1e;
+    --color-danger: #ff8f85;
+    --color-danger-soft: #2c1614;
+    --color-warning: #f0b64d;
+    --color-warning-soft: #2b2113;
+    --color-info: #6cc0e8;
+    --color-info-soft: #10242e;
+
+    --color-price: #e8edf2;
+    --color-deal: #ff8f85;
+    --color-star-empty: #3d4d5c;
+  }
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Anchor targets clear the sticky header instead of hiding behind it. */
+    scroll-padding-top: calc(var(--spacing-header) + 0.5rem);
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-surface-sunken);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    /* Slightly tighter than browser default; easier to read on small screens. */
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible focus for every interactive element. Never removed — this is the
+     keyboard user's only cursor. :focus-visible keeps it off mouse clicks. */
+  :focus-visible {
+    outline: 2px solid var(--color-info);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Images should never blow out a grid cell. */
+  img,
+  svg,
+  video {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Respect the OS setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Visually hidden but announced by screen readers — for skip links, live regions
+     and labels that would be redundant on screen. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Clamp helpers for product titles, which vary wildly in length. */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
