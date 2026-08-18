@@ -19,10 +19,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Never lock zoom — pinch-to-zoom is an accessibility necessity, not a nuisance.
   maximumScale: 5,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#0d1b2a' },
-    { media: '(prefers-color-scheme: dark)', color: '#0b1116' },
-  ],
+  // Single value: this is a light-mode design, and the header is the dark navy brand bar, which
+  // is what the browser chrome should match. A dark variant here would advertise a theme the
+  // stylesheet does not have.
+  themeColor: '#0d1b2a',
+  colorScheme: 'light',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

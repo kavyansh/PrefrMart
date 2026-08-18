@@ -69,41 +69,31 @@
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* Dark mode: only the semantic tokens flip. Brand and status hues are re-tuned for
-   the darker ground rather than reused, so contrast holds in both themes. */
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: #10181f;
-    --color-surface-sunken: #0b1116;
-    --color-surface-raised: #18232c;
-    --color-border: #2b3946;
-    --color-border-strong: #3d4d5c;
-
-    --color-fg: #e8edf2;
-    --color-fg-muted: #a3b0bc;
-    --color-fg-subtle: #8593a0;
-    --color-fg-inverse: #10181f;
-
-    --color-success: #4ec38a;
-    --color-success-soft: #102a1e;
-    --color-danger: #ff8f85;
-    --color-danger-soft: #2c1614;
-    --color-warning: #f0b64d;
-    --color-warning-soft: #2b2113;
-    --color-info: #6cc0e8;
-    --color-info-soft: #10242e;
-
-    --color-price: #e8edf2;
-    --color-deal: #ff8f85;
-    --color-star-empty: #3d4d5c;
-  }
-}
-
 @layer base {
   *,
   *::before,
   *::after {
     box-sizing: border-box;
+  }
+
+  :root {
+    /*
+     * Declare the scheme explicitly.
+     *
+     * Without this, a browser on a dark-mode OS will re-tint form controls, scrollbars and select
+     * dropdowns to match the system, giving dark inputs on a light page. Some browsers (Chrome's
+     * auto-dark-theme among them) will go further and invert the whole document.
+     *
+     * A previous attempt at dark-mode support lived here as `@media (prefers-color-scheme: dark)`
+     * wrapping an `@theme` block. That does not work: Tailwind v4 merges every `@theme` at build
+     * time regardless of nesting, so the dark values replaced the light ones in `:root` outright and
+     * the site rendered dark for everyone. Verified in the compiled CSS — only one value per token
+     * was emitted, the dark one.
+     *
+     * Proper dark-mode support would need a `[data-theme]` attribute with the palettes as plain CSS
+     * custom properties outside `@theme`. Not in scope; this is a light-mode design.
+     */
+    color-scheme: light;
   }
 
   html {
