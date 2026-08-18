@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { Header } from '@/components/layout/Header';
 import { CheckoutFlow } from '@/components/checkout/CheckoutFlow';
 import { getCurrentUser } from '@/lib/auth/currentUser';
 import { loginUrlFor } from '@/lib/auth/redirect';
@@ -46,12 +45,9 @@ export default async function CheckoutPage() {
   });
 
   return (
-    <>
-      <Header />
-      <main id="main" className="mx-auto max-w-(--container-page) px-3 py-4 sm:px-4">
-        <h1 className="mb-4 text-xl font-semibold sm:text-2xl">Checkout</h1>
-        <CheckoutFlow savedAddresses={addresses} defaultName={user.name} />
-      </main>
-    </>
+    <main id="main" className="mx-auto max-w-(--container-page) px-3 py-4 sm:px-4">
+      <h1 className="mb-4 text-xl font-semibold sm:text-2xl">Checkout</h1>
+      <CheckoutFlow savedAddresses={addresses} defaultName={user.name} />
+    </main>
   );
 }

@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { Header } from '@/components/layout/Header';
 import { CatalogPage } from '@/components/catalog/CatalogPage';
 import { parseFilters } from '@/lib/catalog/query';
 import { CATEGORY_BY_SLUG } from '@/lib/catalog/taxonomy';
@@ -42,14 +41,11 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   const filters = { ...parseFilters(toParams(await searchParams)), category: category.slug };
 
   return (
-    <>
-      <Header />
-      <CatalogPage
-        heading={category.name}
-        filters={filters}
-        basePath={`/c/${category.slug}`}
-      />
-    </>
+    <CatalogPage
+      heading={category.name}
+      filters={filters}
+      basePath={`/c/${category.slug}`}
+    />
   );
 }
 

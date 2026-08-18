@@ -6,6 +6,24 @@ const nextConfig: NextConfig = {
   // Keep the server bundle honest about what it pulls in.
   serverExternalPackages: ['@prisma/client'],
 
+  experimental: {
+    /*
+     * Client-side router cache.
+     *
+     * Every route here is `force-dynamic` (see proxy.ts for why), and the default `dynamic` stale
+     * time for such routes is 0 — meaning the router keeps nothing, so navigating back to a page
+     * refetches its payload from scratch every single time. Combined with a Suspense fallback, that
+     * is a visible skeleton flash on every repeat visit.
+     *
+     * 30 seconds is short enough that stock and prices stay current within a browsing session, and
+     * long enough that moving between the catalog, a product and the cart feels instant.
+     */
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+  },
+
   images: {
     // Seeded product art is local SVG, so the optimizer must be allowed to pass it through.
     dangerouslyAllowSVG: true,

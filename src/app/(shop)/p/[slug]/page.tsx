@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { AddToCartButton } from '@/components/cart/AddToCartButton';
-import { Header } from '@/components/layout/Header';
 import { ProductCard } from '@/components/product/ProductCard';
 import { ProductGallery } from '@/components/product/ProductGallery';
 import { RatingSummary } from '@/components/product/RatingSummary';
@@ -68,8 +67,6 @@ export default async function ProductPage({ params }: PageProps) {
 
   return (
     <>
-      <Header />
-
       {/* Product structured data. See components/seo/JsonLd for why this is safe. */}
       <JsonLd data={buildProductJsonLd(product)} />
 

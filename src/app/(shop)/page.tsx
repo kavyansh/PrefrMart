@@ -1,4 +1,3 @@
-import { Header } from '@/components/layout/Header';
 import { CatalogPage } from '@/components/catalog/CatalogPage';
 import { parseFilters } from '@/lib/catalog/query';
 
@@ -24,15 +23,12 @@ export default async function HomePage({
   const filters = parseFilters(toParams(await searchParams));
 
   return (
-    <>
-      <Header />
-      <CatalogPage
-        heading="Everyday essentials"
-        intro="Browse the full catalog. Scroll to keep loading, or use the button below the grid."
-        filters={filters}
-        basePath="/"
-      />
-    </>
+    <CatalogPage
+      heading="Everyday essentials"
+      intro="Browse the full catalog. Scroll to keep loading, or use the button below the grid."
+      filters={filters}
+      basePath="/"
+    />
   );
 }
 

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { Header } from '@/components/layout/Header';
 import { CartContents } from '@/components/cart/CartContents';
 
 /**
@@ -19,12 +18,9 @@ export const metadata: Metadata = {
 
 export default function CartPage() {
   return (
-    <>
-      <Header />
-      <main id="main" className="mx-auto max-w-(--container-page) px-3 py-4 sm:px-4">
-        <h1 className="mb-4 text-xl font-semibold sm:text-2xl">Your cart</h1>
-        <CartContents />
-      </main>
-    </>
+    <main id="main" className="mx-auto max-w-(--container-page) px-3 py-4 sm:px-4">
+      <h1 className="mb-4 text-xl font-semibold sm:text-2xl">Your cart</h1>
+      <CartContents />
+    </main>
   );
 }
