@@ -10,12 +10,12 @@ fully offline and reproduces identically on any machine.
 ## Quick start
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env          # then set AUTH_SECRET (see below)
-pnpm gen:images               # writes public/img/p/*.svg
-pnpm db:migrate               # creates prisma/dev.db
-pnpm db:seed                  # ~500 products, 2.7k reviews, 65 users, 6 orders
-pnpm dev                      # http://localhost:3000
+npm run gen:images               # writes public/img/p/*.svg
+npm run db:migrate               # creates prisma/dev.db
+npm run db:seed                  # ~500 products, 2.7k reviews, 65 users, 6 orders
+npm run dev                      # http://localhost:3000
 ```
 
 Generate a real `AUTH_SECRET` — the app refuses to boot with the placeholder:
@@ -41,13 +41,13 @@ share the same password but are not intended as sign-in accounts.
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Dev server |
-| `pnpm verify` | typecheck → lint → unit tests → build → bundle budget |
-| `pnpm test` | Vitest unit tests |
-| `pnpm lint` | ESLint (incl. `jsx-a11y`) |
-| `pnpm db:reset` | Drop, re-migrate and re-seed |
-| `pnpm gen:images` | Regenerate placeholder product art |
-| `pnpm check:bundle` | Measure real gzipped first-load JS per route |
+| `npm run dev` | Dev server |
+| `npm run verify` | typecheck → lint → unit tests → build → bundle budget |
+| `npm test` | Vitest unit tests |
+| `npm run lint` | ESLint (incl. `jsx-a11y`) |
+| `npm run db:reset` | Drop, re-migrate and re-seed |
+| `npm run gen:images` | Regenerate placeholder product art |
+| `npm run check:bundle` | Measure real gzipped first-load JS per route |
 
 ## Architecture notes
 
@@ -93,6 +93,20 @@ script on every HTML route carries the request nonce, so making a page static fa
 build rather than silently shipping a blank page. Add new page routes to `HTML_ROUTES`
 in that file.
 
+### Known `npm audit` finding
+
+`npm audit` reports 3 high-severity issues, all one advisory: `deepmerge-ts <8.0.0`
+(stack exhaustion on recursive object graphs). The only path to it is:
+
+```
+prisma (devDependency, CLI) → @prisma/config → deepmerge-ts
+```
+
+It is build-tooling only — never part of the runtime bundle — and the sole object the CLI
+merges is our own static `prisma.config.ts`, not untrusted input. `npm audit fix --force`
+would downgrade to `prisma@6.12`, which breaks the Prisma 7 schema and adapter setup.
+Left as-is deliberately; revisit when Prisma bumps the dependency.
+
 ## Product images
 
 Product art is **generated SVG placeholders**, not photography — deterministic gradients
@@ -107,7 +121,7 @@ Router baseline is 138.8 KB gzipped before a single line of application code.** 
 figure is therefore not reachable with this framework, and pretending otherwise would make
 the budget check meaningless.
 
-`pnpm check:bundle` boots the production server, fetches each route, and gzips exactly the
+`npm run check:bundle` boots the production server, fetches each route, and gzips exactly the
 scripts a modern browser would execute — it excludes Next's ~39 KB `noModule` core-js
 bundle, which modern browsers skip, since counting it would overstate real cost. It reports
 two numbers and fails on either:

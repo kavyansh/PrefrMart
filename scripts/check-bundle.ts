@@ -14,8 +14,8 @@
  * Turbopack (Next 16) no longer writes app-build-manifest.json, so parsing manifests
  * is both fragile and version-dependent. This approach survives upgrades.
  *
- * Usage:  pnpm check:bundle          (boots its own server against .next/)
- *         APP_BASE_URL=… pnpm check:bundle   (measures an already-running server)
+ * Usage:  npm run check:bundle          (boots its own server against .next/)
+ *         APP_BASE_URL=… npm run check:bundle   (measures an already-running server)
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';

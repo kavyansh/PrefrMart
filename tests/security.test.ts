@@ -10,8 +10,8 @@
  * The "every script carries a nonce" assertion below is the regression guard. It fails if
  * anyone makes a page static, or removes the nonce plumbing from proxy.ts.
  *
- * Requires a CURRENT `pnpm build` first, then boots its own server on a free port. This is
- * why `pnpm verify` runs build before test — against a stale .next these assertions
+ * Requires a CURRENT `npm run build` first, then boots its own server on a free port. This is
+ * why `npm run verify` runs build before test — against a stale .next these assertions
  * describe the previous build, not the code in front of you.
  */
 
@@ -67,7 +67,7 @@ beforeAll(async () => {
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error('Server did not start. Did you run `pnpm build`?');
+  throw new Error('Server did not start. Did you run `npm run build`?');
 }, 120_000);
 
 afterAll(async () => {

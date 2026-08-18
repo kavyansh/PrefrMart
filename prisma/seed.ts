@@ -5,7 +5,7 @@
  * which means a bug found on one machine reproduces on another, and the generated
  * placeholder art always matches the products that reference it.
  *
- * Run with `pnpm db:seed` (or `pnpm db:reset` to rebuild from scratch).
+ * Run with `npm run db:seed` (or `npm run db:reset` to rebuild from scratch).
  */
 
 process.loadEnvFile('.env');
