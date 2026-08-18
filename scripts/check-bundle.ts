@@ -29,16 +29,20 @@ import { createServer } from 'node:net';
  * client components in the tree. The original 150KB first-load target is not reachable
  * with this framework — see README. Re-measure and update this when upgrading Next.
  *
- * APP_CODE_BUDGET_KB is the number that actually reflects our own work: everything above
- * the floor. It is the useful signal day to day, and it is what caught the whole of zod
- * being pulled into the browser bundle by one const import (70KB).
+ * APP_CODE_BUDGET_KB is the number that actually reflects our own work: everything above the
+ * floor. It is the useful signal day to day, and it is what caught the whole of zod being pulled
+ * into the browser bundle by one const import (70KB).
+ *
+ * The floor was measured on `/`, so a lighter route can legitimately come out *below* it and show a
+ * negative delta — `/login` loads no product grid and does exactly that. That is information, not
+ * an error, which is why the column is labelled "vs floor" rather than "app code".
  */
 const FRAMEWORK_FLOOR_KB = 138.8;
 const BUDGET_KB = 185;
 const APP_CODE_BUDGET_KB = 45;
 
 /** Routes to measure. Each must be reachable with a GET and return HTML. */
-const ROUTES = ['/', '/c/electronics', '/p/kestrel-ultra-webcam-gen-3', '/login'] as const;
+const ROUTES = ['/', '/c/electronics', '/p/kestrel-ultra-webcam-gen-3', '/login', '/cart'] as const;
 
 const KB = 1024;
 
@@ -185,9 +189,11 @@ async function main(): Promise<void> {
       const overApp = appBytes > APP_CODE_BUDGET_KB * KB;
 
       const flag = overTotal || overApp ? 'FAIL' : 'ok  ';
+      // Signed, so a route lighter than the reference route reads as such rather than as a bug.
+      const delta = `${appBytes < 0 ? '-' : '+'}${formatKb(Math.abs(appBytes))}`;
       console.log(
         `${flag} ${measurement.route.padEnd(30)} total ${formatKb(measurement.totalBytes).padStart(9)}` +
-          `   app code ${formatKb(appBytes).padStart(9)}`,
+          `   vs floor ${delta.padStart(10)}`,
       );
 
       if (overTotal) {
@@ -204,7 +210,9 @@ async function main(): Promise<void> {
     }
 
     console.log('─'.repeat(70));
-    console.log(`Budgets: total ${BUDGET_KB} KB · app code ${APP_CODE_BUDGET_KB} KB (gzipped)`);
+    console.log(
+      `Budgets: total ${BUDGET_KB} KB · at most +${APP_CODE_BUDGET_KB} KB over the floor (gzipped)`,
+    );
 
     if (failures.length > 0) {
       console.error('\nBundle budget exceeded:');

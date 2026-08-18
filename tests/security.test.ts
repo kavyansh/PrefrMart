@@ -27,13 +27,14 @@ const HTML_ROUTES = [
   '/p/kestrel-ultra-webcam-gen-3',
   '/login',
   '/signup',
+  '/cart',
 ] as const;
 
 /**
  * Auth-gated HTML routes. Checked separately because an unauthenticated request to these gets a
  * 307 to sign-in, so the nonce assertion would be testing the redirect rather than the page.
  */
-const AUTHED_HTML_ROUTES = ['/account/profile', '/account/orders'] as const;
+const AUTHED_HTML_ROUTES = ['/account/profile', '/account/orders', '/checkout'] as const;
 
 let server: ChildProcess | undefined;
 let baseUrl = '';

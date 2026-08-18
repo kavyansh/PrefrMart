@@ -12,7 +12,11 @@ import { getOrder } from '@/lib/orders/queries';
 
 export const dynamic = 'force-dynamic';
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = {
+  params: Promise<{ id: string }>;
+  /** `?placed=1` right after checkout, so the same page doubles as the confirmation. */
+  searchParams: Promise<{ placed?: string }>;
+};
 
 export const metadata: Metadata = {
   title: 'Order details',
@@ -20,8 +24,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function OrderDetailPage({ params }: PageProps) {
-  const { id } = await params;
+export default async function OrderDetailPage({ params, searchParams }: PageProps) {
+  const [{ id }, { placed }] = await Promise.all([params, searchParams]);
+  const justPlaced = placed === '1';
 
   const userId = await getSessionUserId();
   if (userId === null) redirect(loginUrlFor(`/orders/${id}`));
@@ -45,11 +50,27 @@ export default async function OrderDetailPage({ params }: PageProps) {
       <Header />
 
       <main id="main" className="mx-auto max-w-3xl px-3 py-4 sm:px-4">
-        <nav aria-label="Breadcrumb" className="mb-3 text-sm text-fg-muted">
-          <Link href="/account/orders" className="hover:underline">
-            ← Back to your orders
-          </Link>
-        </nav>
+        {justPlaced ? (
+          /*
+            role="status" rather than an alert: this is confirmation, not a warning, and it should
+            be announced without interrupting whatever the screen reader is doing.
+          */
+          <div
+            role="status"
+            className="mb-4 rounded-lg border border-success/30 bg-success-soft p-4"
+          >
+            <h2 className="text-base font-semibold text-success">Order placed</h2>
+            <p className="mt-1 text-sm text-success">
+              Thanks — we have your order and will email updates as it ships.
+            </p>
+          </div>
+        ) : (
+          <nav aria-label="Breadcrumb" className="mb-3 text-sm text-fg-muted">
+            <Link href="/account/orders" className="hover:underline">
+              ← Back to your orders
+            </Link>
+          </nav>
+        )}
 
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -149,6 +170,23 @@ export default async function OrderDetailPage({ params }: PageProps) {
             </dl>
           </section>
         </div>
+
+        {justPlaced && (
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link
+              href="/account/orders"
+              className="inline-flex min-h-11 items-center rounded-md border border-border-strong bg-surface px-4 text-sm font-medium"
+            >
+              View all orders
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex min-h-11 items-center rounded-md border border-accent-strong bg-accent px-4 text-sm font-medium text-accent-fg"
+            >
+              Keep shopping
+            </Link>
+          </div>
+        )}
       </main>
     </>
   );

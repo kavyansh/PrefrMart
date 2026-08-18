@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CartBadge } from '@/components/cart/CartBadge';
 import { getCurrentUser } from '@/lib/auth/currentUser';
 import { listCategories } from '@/lib/catalog/products';
 
@@ -23,7 +24,7 @@ export async function Header() {
         {/* Search lands here in Phase 6. */}
         <div className="flex-1" />
 
-        <nav aria-label="Account" className="flex items-center gap-1">
+        <nav aria-label="Account and cart" className="flex items-center gap-1">
           {user === null ? (
             <Link href="/login" className="rounded-md px-3 py-2 text-sm hover:bg-ink-soft">
               Sign in
@@ -38,7 +39,7 @@ export async function Header() {
               {user.name.split(' ')[0]}
             </Link>
           )}
-          {/* The cart link arrives in Phase 5 with the cart itself. */}
+          <CartBadge />
         </nav>
       </div>
 

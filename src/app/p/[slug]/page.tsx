@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
+import { AddToCartButton } from '@/components/cart/AddToCartButton';
 import { Header } from '@/components/layout/Header';
 import { ProductCard } from '@/components/product/ProductCard';
 import { ProductGallery } from '@/components/product/ProductGallery';
@@ -129,10 +130,13 @@ export default async function ProductPage({ params }: PageProps) {
                 )}
               </div>
 
-              {/*
-                Add to cart lands in Phase 5 with the cart and checkout. Rendering a button
-                here now would be a control that does nothing.
-              */}
+              <div className="mt-4">
+                <AddToCartButton
+                  productId={product.id}
+                  stock={product.stock}
+                  productTitle={product.title}
+                />
+              </div>
             </div>
 
             {product.bullets.length > 0 && (

@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next';
+import { CartProvider } from '@/components/cart/CartProvider';
+import { getSessionUserId } from '@/lib/auth/session';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -23,7 +25,14 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  /*
+   * Read the session here so the cart provider knows which mode to run in. Only the id is passed
+   * down — enough to decide "local store or server cart" and to detect a change of identity, and
+   * nothing a client component has any business knowing beyond that.
+   */
+  const userId = await getSessionUserId();
+
   return (
     <html lang="en">
       <body className="min-h-dvh">
@@ -37,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to main content
         </a>
-        {children}
+        <CartProvider userId={userId}>{children}</CartProvider>
       </body>
     </html>
   );

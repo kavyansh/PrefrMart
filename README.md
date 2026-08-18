@@ -117,6 +117,33 @@ re-check with `getCurrentUser()`, which is what catches a valid token for a sinc
 backslash (`/\evil.example`) and control-character forms all rejected. Without this, a link from
 our own sign-in flow can deposit a user on a look-alike page an attacker controls.
 
+**The client never sets a price.** A guest cart lives in IndexedDB, which the server cannot vouch
+for, so only `{ productId, qty }` is ever stored there. Prices, titles and stock are resolved from
+the database on every render via `/api/cart/resolve`, and `POST /api/orders` reads lines from the
+server's own cart. A client can change *what* it is buying and *how many* — never at what price.
+Asserted by sending a bogus `unitCents` and checking the real one comes back.
+
+**Order placement is one transaction.** Re-read stock, verify it, decrement, create the order and
+its snapshotted items, empty the cart — all together. As separate statements, a crash between them
+leaves stock decremented with no order, or an order for goods never reserved. Stock is re-read
+*inside* the transaction rather than trusted from the cart view the shopper was looking at, which
+may be minutes old.
+
+**Double-submit produces one order.** The idempotency key is generated once when the checkout flow
+mounts, not per submit — a key per submit would defeat the point. A unique constraint on the column
+is the actual guarantee; the disabled button is only the visible half. Two concurrent submissions
+are tested, not assumed: one 201, one 200, one order, stock moved once.
+
+**Cart merge sums, it does not replace.** A shopper who filled a basket as a guest then signs in
+keeps both. Overwriting would silently discard whichever basket they did not touch most recently,
+and they have no way to know which that was. Summing is then capped per line, so 8 + 8 becomes 10
+rather than 16.
+
+**No card data leaves the browser.** Luhn, expiry and CVC checks run entirely client-side in
+`src/lib/checkout/card.ts`; the only value derived from the card that reaches the server is a label
+like "Visa ending 4242". Luhn earns its place because length and prefix checks pass a transposed
+pair of digits and a checksum does not.
+
 **Account data isolation.** Every function in `src/lib/orders/queries.ts` takes a `userId` and
 scopes on it — that is the authorisation boundary, not a convenience. There is deliberately no
 `getOrderById(id)` for a caller to reach for by mistake. Another user's order id is
@@ -234,9 +261,21 @@ is rate-limited to 10 attempts per 15 minutes per IP, and a suite that signs in 
 exhausts that budget and starts failing with 429s — which is the control working, not something
 to tune away.
 
+The checkout suite writes real orders and moves real stock, so it restores both in `afterAll`.
+Verified by snapshotting total stock, order count and address count before and after three
+consecutive runs: identical each time.
+
+### What the tests do not cover
+
+Everything is verified against a real server and database, but there is **no browser in the loop
+yet** (Playwright arrives in Phase 6). So the following are reasoned and unit-tested but not
+observed end to end: IntersectionObserver firing for infinite scroll, sessionStorage scroll
+restore, IndexedDB persistence, and the cart and checkout UI after hydration — `curl` sees only
+the pre-hydration skeleton on those routes.
+
 ## Status
 
-**Phases 1-4 of 6 complete.** 192 tests.
+**Phases 1-5 of 6 complete.** 256 tests.
 
 - **P1** — foundation, Prisma schema, deterministic seed, design tokens, cursor pagination,
   nonce CSP, product listing API, verification harness.
@@ -250,11 +289,12 @@ to tune away.
   open-redirect protection, settings shell with a desktop rail and mobile sheet, profile
   editing, cursor-paginated order history, and order detail with snapshotted address and
   totals.
+- **P5** — IndexedDB guest cart, server cart for signed-in users, merge on sign-in, cart page with
+  quantity steppers and stock clamping, header badge, and a four-step checkout (address →
+  delivery → mock payment → review) placing orders transactionally with idempotency.
 
-**Not yet wired: add to cart.** The PDP shows price, stock and delivery but no cart button —
-the cart is Phase 5, and a control that does nothing is worse than an absent one.
-
-Not yet built: cart and checkout (P5), search, offline/PWA and the a11y pass (P6).
+Not yet built: search including the image-search stub, offline/PWA, and the accessibility pass
+(P6).
 
 **Deliberately out of scope:** voice commands, and real image-similarity search — the
 image search shipping in Phase 6 is a labelled stub behind `lib/search/imageStub.ts`.
