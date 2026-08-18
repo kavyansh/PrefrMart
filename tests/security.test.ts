@@ -25,7 +25,15 @@ const HTML_ROUTES = [
   '/c/electronics',
   '/?minRating=4&inStock=true',
   '/p/kestrel-ultra-webcam-gen-3',
+  '/login',
+  '/signup',
 ] as const;
+
+/**
+ * Auth-gated HTML routes. Checked separately because an unauthenticated request to these gets a
+ * 307 to sign-in, so the nonce assertion would be testing the redirect rather than the page.
+ */
+const AUTHED_HTML_ROUTES = ['/account/profile', '/account/orders'] as const;
 
 let server: ChildProcess | undefined;
 let baseUrl = '';
@@ -142,6 +150,33 @@ describe('Content-Security-Policy', () => {
           'This usually means the route became static — it must be force-dynamic.',
       ).toEqual([]);
     });
+  });
+});
+
+describe.each(AUTHED_HTML_ROUTES)('authenticated route %s', (route) => {
+  it('stamps the CSP nonce onto every script tag', async () => {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'asha@example.com', password: 'demo1234' }),
+    });
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+
+    const response = await fetch(`${baseUrl}${route}`, { headers: { cookie } });
+    expect(response.status).toBe(200);
+
+    const html = await response.text();
+    const headerNonce = /'nonce-([^']+)'/.exec(
+      response.headers.get('content-security-policy') ?? '',
+    )?.[1];
+    expect(headerNonce).toBeTruthy();
+
+    const unstamped = [...html.matchAll(/<script\b([^>]*)>/gi)]
+      .map((match) => match[1] ?? '')
+      .filter((attrs) => !/\bnoModule\b/i.test(attrs) && !attrs.includes(`nonce="${headerNonce}"`));
+
+    expect(unstamped, 'account pages must be dynamic to receive a nonce').toEqual([]);
   });
 });
 

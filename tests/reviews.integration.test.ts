@@ -13,8 +13,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers/server';
 import { deleteReviewsAndRestoreAggregates, testDb } from './helpers/db';
-
-const PASSWORD = 'demo1234';
+import { loginAs } from './helpers/auth';
 
 let server: TestServer;
 let baseUrl: string;
@@ -22,20 +21,8 @@ let productSlug: string;
 let productId: string;
 const createdReviewIds: string[] = [];
 
-/** Sign in and return the Set-Cookie value for subsequent requests. */
-async function login(email: string): Promise<string> {
-  const response = await fetch(`${baseUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  });
-  expect(response.status, `login failed for ${email}`).toBe(200);
-
-  const cookie = response.headers.get('set-cookie');
-  expect(cookie).toBeTruthy();
-  // Only the name=value pair is sent back; the attributes are the server's business.
-  return cookie!.split(';')[0]!;
-}
+/** Cached per account — the login endpoint is rate-limited. See helpers/auth.ts. */
+const login = (email: string) => loginAs(baseUrl, email);
 
 async function postReview(
   cookie: string | null,

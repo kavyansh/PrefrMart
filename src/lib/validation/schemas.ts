@@ -104,6 +104,16 @@ export const signupSchema = credentialsSchema.extend({
 export type CredentialsInput = z.infer<typeof credentialsSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
 
+export const orderListQuerySchema = z.object({
+  cursor: cursorSchema,
+  limit: queryInt(1, MAX_PAGE_SIZE),
+});
+
+/** Profile edit. Only the name is editable — see the PATCH handler for why. */
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Enter your name.').max(80),
+});
+
 /** Parse URLSearchParams into a plain object Zod can read. */
 export function searchParamsToObject(params: URLSearchParams): Record<string, string> {
   const result: Record<string, string> = {};

@@ -104,7 +104,24 @@ form behind a proxy or real hostname. See `src/lib/api/request.ts`.
 **Login does not leak which accounts exist.** Unknown email and wrong password return the same
 message, and the unknown-email path still spends a scrypt verification against a throwaway
 hash — otherwise response time alone answers "is this address registered?", which is how
-target lists get built before a credential-stuffing run.
+target lists get built before a credential-stuffing run. Sign-up hashes the password *before*
+checking for a duplicate, for the same reason.
+
+**Route guards.** `src/proxy.ts` redirects unauthenticated requests to `/account`, `/checkout`
+and `/orders` to sign-in, carrying the destination so signing in resumes the journey. The guard
+verifies the JWT signature only — no database hit, so it stays Edge-safe — and the pages
+re-check with `getCurrentUser()`, which is what catches a valid token for a since-deleted user.
+
+**Open redirect.** The post-login `next` parameter is sanitised in
+`src/lib/auth/redirect.ts`: root-relative paths only, with protocol-relative (`//evil.example`),
+backslash (`/\evil.example`) and control-character forms all rejected. Without this, a link from
+our own sign-in flow can deposit a user on a look-alike page an attacker controls.
+
+**Account data isolation.** Every function in `src/lib/orders/queries.ts` takes a `userId` and
+scopes on it — that is the authorisation boundary, not a convenience. There is deliberately no
+`getOrderById(id)` for a caller to reach for by mistake. Another user's order id is
+indistinguishable from one that does not exist: a 403 for "exists but not yours" would confirm
+the id is real, which is enough to enumerate the site's order volume.
 
 ### Why every page is `force-dynamic`
 
@@ -189,21 +206,37 @@ mobile sheet — costs **7.9 KB**.
 If the hard 150 KB total matters more than the framework, that is a framework decision
 (Astro/SvelteKit with islands would clear it), not something tuning can reach.
 
-### Known limitation: soft 404 on unknown product URLs
+### Known limitation: soft 404 on unknown product and order URLs
 
 `/c/<unknown>` returns a real 404 because the category slugs are a closed static set the Edge
-proxy can check. `/p/<unknown>` returns the correct "Page not found" body with **HTTP 200**,
-because product slugs are not a closed set and `ProxyConfig` in Next 16.3.1 has no `runtime`
-option — the proxy is Edge-only and cannot reach Prisma.
+proxy can check. `/p/<unknown>` and `/orders/<unknown>` return the correct "Page not found" body
+with **HTTP 200**, because those ids are not a closed set and `ProxyConfig` in Next 16.3.1 has no
+`runtime` option — the proxy is Edge-only and cannot reach Prisma.
 
 Deliberately not worked around: hardcoding 504 slugs into the proxy would not survive a real
-catalog, and an internal HEAD request per product page view doubles the request count to fix a
-status code. The user-visible behaviour is correct; only crawlers and uptime monitors are
-misinformed. Revisit when `notFound()` sets the status, or when the proxy can run on Node.
+catalog, and an internal HEAD request per page view doubles the request count to fix a status
+code. Revisit when `notFound()` sets the status, or when the proxy can run on Node.
+
+Note this is cosmetic, not a security gap. The *content* is correct, and for orders the property
+that matters holds: another user's order and a fabricated id return byte-identical responses, so
+nothing is leaked by the status being wrong. Asserted in `tests/auth.integration.test.ts`.
+
+### Tests run serially, on purpose
+
+`vitest.config.ts` sets `fileParallelism: false`. The integration suites share one SQLite file,
+and in parallel they interfere in ways that look like product bugs — the reviews suite writing a
+review changes a product's `ratingAvg`, which shifts the keyset window the pagination suite is
+walking under `sort=rating`, so a row gets skipped. Observed exactly that. The unit tests run in
+~100ms, so serialising costs almost nothing.
+
+Integration tests also cache sign-ins per account (`tests/helpers/auth.ts`). The login endpoint
+is rate-limited to 10 attempts per 15 minutes per IP, and a suite that signs in per assertion
+exhausts that budget and starts failing with 429s — which is the control working, not something
+to tune away.
 
 ## Status
 
-**Phases 1-3 of 6 complete.** 148 tests.
+**Phases 1-4 of 6 complete.** 192 tests.
 
 - **P1** — foundation, Prisma schema, deterministic seed, design tokens, cursor pagination,
   nonce CSP, product listing API, verification harness.
@@ -213,12 +246,15 @@ misinformed. Revisit when `notFound()` sets the status, or when the proxy can ru
 - **P3** — product detail page: gallery, price, stock, specs, rating distribution, related
   products, `Product` JSON-LD. Cursor-paginated sortable reviews and a review form gated on
   auth. Session handling, login/logout/me endpoints, CSRF origin checks and rate limiting.
+- **P4** — sign-in and sign-up pages sharing one form, route guards with post-login resume and
+  open-redirect protection, settings shell with a desktop rail and mobile sheet, profile
+  editing, cursor-paginated order history, and order detail with snapshotted address and
+  totals.
 
 **Not yet wired: add to cart.** The PDP shows price, stock and delivery but no cart button —
 the cart is Phase 5, and a control that does nothing is worse than an absent one.
 
-Not yet built: sign-in UI and route guards, settings and orders (P4), cart and checkout (P5),
-search, offline/PWA and the a11y pass (P6).
+Not yet built: cart and checkout (P5), search, offline/PWA and the a11y pass (P6).
 
 **Deliberately out of scope:** voice commands, and real image-similarity search — the
 image search shipping in Phase 6 is a labelled stub behind `lib/search/imageStub.ts`.

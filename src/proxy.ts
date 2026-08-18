@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { CATEGORY_BY_SLUG } from '@/lib/catalog/taxonomy';
+import { loginUrlFor } from '@/lib/auth/redirect';
+import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 /**
  * Per-request Content-Security-Policy with a nonce.
@@ -33,6 +35,29 @@ import { CATEGORY_BY_SLUG } from '@/lib/catalog/taxonomy';
  * category slugs are a closed static set, so checking them here is cheap and exact; the
  * page still calls `notFound()` to render the body.
  */
+/**
+ * Routes that require a signed-in user.
+ *
+ * Guarding here rather than only inside each page means an unauthenticated request never
+ * reaches a component that reads account data — there is no chance of a page forgetting the
+ * check and briefly rendering someone's orders. The pages still verify the session for their
+ * own data access; this is the outer gate, not the only one.
+ *
+ * The check verifies the JWT signature but does not hit the database, which keeps it Edge-safe
+ * and cheap. A token for a since-deleted user passes here and is caught by `getCurrentUser()`
+ * returning null.
+ */
+const PROTECTED_PREFIXES = ['/account', '/checkout', '/orders'] as const;
+
+function requiresAuth(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+/** Signed-in users have no reason to see the sign-in form. */
+const AUTH_PAGES = ['/login', '/signup'] as const;
+
 function notFoundStatus(request: NextRequest): number | undefined {
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith('/c/')) return undefined;
@@ -41,7 +66,22 @@ function notFoundStatus(request: NextRequest): number | undefined {
   return CATEGORY_BY_SLUG.has(slug) ? undefined : 404;
 }
 
-export default function proxy(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = token ? await verifySessionToken(token) : null;
+
+  if (session === null && requiresAuth(pathname)) {
+    // Carries where they were going, so signing in resumes the journey instead of dumping
+    // them on the home page. The target is sanitised — see lib/auth/redirect.ts.
+    return NextResponse.redirect(new URL(loginUrlFor(pathname, search), request.url));
+  }
+
+  if (session !== null && AUTH_PAGES.includes(pathname as (typeof AUTH_PAGES)[number])) {
+    return NextResponse.redirect(new URL('/account/profile', request.url));
+  }
+
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const isDev = process.env.NODE_ENV !== 'production';
 

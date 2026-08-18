@@ -1,12 +1,17 @@
 import Link from 'next/link';
+import { getCurrentUser } from '@/lib/auth/currentUser';
 import { listCategories } from '@/lib/catalog/products';
 
 /**
- * Site header. Server Component — the search field and cart badge become client
- * islands in later phases, but the shell itself stays JS-free.
+ * Site header. Server Component — the search field and cart badge become client islands in
+ * later phases, but the shell itself stays JS-free.
+ *
+ * Reading the session here is what makes the account link honest: it points to settings when
+ * signed in and to sign-in when not, rather than sending signed-out visitors to a guarded route
+ * only to bounce them through a redirect.
  */
 export async function Header() {
-  const categories = await listCategories();
+  const [categories, user] = await Promise.all([listCategories(), getCurrentUser()]);
 
   return (
     <header className="sticky top-0 z-40 bg-ink text-fg-inverse">
@@ -18,16 +23,22 @@ export async function Header() {
         {/* Search lands here in Phase 6. */}
         <div className="flex-1" />
 
-        <nav aria-label="Account and cart" className="flex items-center gap-1">
-          <Link
-            href="/account/profile"
-            className="rounded-md px-3 py-2 text-sm hover:bg-ink-soft"
-          >
-            Account
-          </Link>
-          <Link href="/cart" className="rounded-md px-3 py-2 text-sm hover:bg-ink-soft">
-            Cart
-          </Link>
+        <nav aria-label="Account" className="flex items-center gap-1">
+          {user === null ? (
+            <Link href="/login" className="rounded-md px-3 py-2 text-sm hover:bg-ink-soft">
+              Sign in
+            </Link>
+          ) : (
+            <Link
+              href="/account/profile"
+              className="rounded-md px-3 py-2 text-sm hover:bg-ink-soft"
+            >
+              {/* First name only: the header is tight on a phone. */}
+              <span className="sr-only">Your account, </span>
+              {user.name.split(' ')[0]}
+            </Link>
+          )}
+          {/* The cart link arrives in Phase 5 with the cart itself. */}
         </nav>
       </div>
 
