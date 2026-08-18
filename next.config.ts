@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
   },
 
   async headers() {
-    // Note: CSP is set per-request in middleware.ts because it carries a nonce.
+    // Note: CSP is set per-request in proxy.ts because it carries a nonce.
     // Everything here is static and safe to send from config.
     return [
       {
