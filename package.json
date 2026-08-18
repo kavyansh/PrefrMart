@@ -19,7 +19,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force",
+    "db:reset": "prisma migrate reset --force && npm run db:seed",
     "check:bundle": "tsx scripts/check-bundle.ts",
     "verify": "npm run typecheck && npm run lint && npm run build && npm test && npm run check:bundle",
     "e2e": "playwright test"
