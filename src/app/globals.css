@@ -190,4 +190,23 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  /*
+   * Skip style, layout and paint for a card that is off screen.
+   *
+   * An infinite-scroll session accumulates cards without bound — a determined shopper can
+   * reach several hundred — and every one of them is otherwise laid out and painted on each
+   * frame. This caps that work at roughly a viewport's worth, and unlike windowing it leaves
+   * the cards in the DOM, so Ctrl+F, screen-reader browsing and scroll height keep working.
+   *
+   * `auto` on contain-intrinsic-size is what makes it safe: the browser substitutes each
+   * card's real measured height once it has rendered, so 320px is only a first guess for a
+   * card never yet seen. A fixed value here would make the scrollbar drift while scrolling.
+   *
+   * Deliberately NOT applied to the first row — see the `priority` prop in ProductCard.
+   */
+  .offscreen-skip {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+  }
 }

@@ -18,6 +18,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { loginAs } from './helpers/auth';
 
 /** Pages whose HTML must be nonce-stamped. Add every new page route here. */
 const HTML_ROUTES = [
@@ -158,13 +159,7 @@ describe('Content-Security-Policy', () => {
 
 describe.each(AUTHED_HTML_ROUTES)('authenticated route %s', (route) => {
   it('stamps the CSP nonce onto every script tag', async () => {
-    const login = await fetch(`${baseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'asha@example.com', password: 'demo1234' }),
-    });
-    expect(login.status).toBe(200);
-    const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+    const cookie = await loginAs(baseUrl, 'asha@example.com');
 
     const response = await fetch(`${baseUrl}${route}`, { headers: { cookie } });
     expect(response.status).toBe(200);

@@ -2,12 +2,19 @@ import type { NextRequest } from 'next/server';
 import { apiError, guarded, ok, validationError } from '@/lib/api/response';
 import { isSameOrigin } from '@/lib/api/request';
 import { hashPassword } from '@/lib/auth/password';
-import { createSessionCookie } from '@/lib/auth/session';
 import { db } from '@/lib/db';
 import { callerKey, rateLimit } from '@/lib/rateLimit';
 import { signupSchema } from '@/lib/validation/schemas';
 
-/** POST /api/auth/signup — create an account and sign in. */
+/**
+ * POST /api/auth/signup — create an account.
+ *
+ * Kept after the move to NextAuth because NextAuth has no registration flow for credentials:
+ * creating the user is the application's job. It deliberately does NOT establish the session
+ * — issuing a cookie NextAuth did not mint would not be recognised by it. The client calls
+ * `signIn('credentials', …)` with the same values once this returns, so sign-up costs two
+ * round-trips.
+ */
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,10 +56,6 @@ export async function POST(request: NextRequest) {
         data: { email, name, passwordHash },
         select: { id: true, email: true, name: true },
       });
-
-      // Sign the new user straight in; making them log in again immediately is friction
-      // with no security benefit.
-      await createSessionCookie(user.id);
 
       return ok({ user }, { status: 201 });
     } catch (error) {

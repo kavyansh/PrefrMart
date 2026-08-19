@@ -10,6 +10,20 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
 
     /*
+     * OAuth credentials are required at boot (lib/env.ts), so the suite supplies its own.
+     * They must live here rather than in a setup file: the integration suites spawn a real
+     * `next start` through tests/helpers/server.ts, which inherits process.env from this
+     * process. No test signs in through a live provider — only that the app boots, and that
+     * the credentials path and the rejection path behave.
+     */
+    env: {
+      GOOGLE_CLIENT_ID: 'test-google-client-id',
+      GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+      GITHUB_CLIENT_ID: 'test-github-client-id',
+      GITHUB_CLIENT_SECRET: 'test-github-client-secret',
+    },
+
+    /*
      * Test files run one at a time.
      *
      * The integration suites share a single SQLite file and each boots its own server. Run in

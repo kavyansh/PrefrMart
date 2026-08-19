@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCart } from '@/components/cart/CartProvider';
+import { useCartItemCount } from '@/lib/cart/store';
 
 /**
  * Header cart link with a running item count.
@@ -11,7 +11,7 @@ import { useCart } from '@/components/cart/CartProvider';
  * assistive tech to avoid reading the figure twice.
  */
 export function CartBadge() {
-  const { itemCount } = useCart();
+  const itemCount = useCartItemCount();
 
   return (
     <Link

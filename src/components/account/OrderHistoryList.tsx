@@ -2,24 +2,24 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { OrderStatusBadge } from '@/components/account/OrderStatusBadge';
-import { useCursorPagination } from '@/hooks/useCursorPagination';
 import { formatMoney } from '@/lib/money';
 import { imageSrc } from '@/lib/catalog/taxonomy';
 import type { OrderSummary } from '@/lib/orders/queries';
 import type { Page } from '@/lib/pagination';
 
 /**
- * Order history, cursor-paginated by the same hook as the catalog and reviews.
+ * Order history, cursor-paginated like the catalog and reviews.
  *
- * Three consumers now share one pagination contract. That is the payoff for defining
- * `{ items, nextCursor }` once: loading, de-duplication, abort-on-unmount and retry behaviour
- * are identical everywhere, and a fix to any of them applies to all three.
+ * All three share the `{ items, nextCursor }` contract, so all three are the same
+ * `useInfiniteQuery` shape — loading, retry and cancellation behave identically without a line of
+ * shared code between them.
  *
- * No `storageKey`: order history is short and private, and persisting it into sessionStorage
- * would leave purchase data on a shared machine after signing out.
+ * `gcTime` is deliberately short here. Purchase history is private, and the default five minutes
+ * would leave it in memory well after someone signed out on a shared machine.
  */
 export function OrderHistoryList({
   initialPage,
@@ -28,22 +28,29 @@ export function OrderHistoryList({
   initialPage: Page<OrderSummary>;
   totalCount: number;
 }) {
-  const fetchPage = useCallback(
-    async (cursor: string, signal: AbortSignal): Promise<Page<OrderSummary>> => {
-      const response = await fetch(`/api/account/orders?cursor=${encodeURIComponent(cursor)}`, {
+  const { data, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['account-orders'],
+    queryFn: async ({ pageParam, signal }) => {
+      const cursor = pageParam === null ? '' : `?cursor=${encodeURIComponent(pageParam)}`;
+      const response = await fetch(`/api/account/orders${cursor}`, {
         signal,
         headers: { accept: 'application/json' },
       });
       if (!response.ok) throw new Error(`Orders request failed with ${response.status}`);
       return (await response.json()) as Page<OrderSummary>;
     },
-    [],
-  );
-
-  const { items, isLoading, error, hasMore, loadMore } = useCursorPagination<OrderSummary>({
-    initialPage,
-    fetchPage,
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialData: { pages: [initialPage], pageParams: [null] },
+    // Private data: evict quickly rather than holding it after a sign-out.
+    gcTime: 30_000,
   });
+
+  const items = data.pages.flatMap((page) => page.items);
+
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (totalCount === 0) {
     return (
@@ -122,16 +129,16 @@ export function OrderHistoryList({
       <div className="mt-4 flex flex-col items-center gap-2">
         {error !== null && (
           <div className="w-full max-w-sm rounded-md border border-danger/30 bg-danger-soft p-3 text-center">
-            <p className="mb-2 text-sm text-danger">{error}</p>
+            <p className="mb-2 text-sm text-danger">Could not load orders.</p>
             <Button variant="secondary" size="sm" onClick={loadMore}>
               Try again
             </Button>
           </div>
         )}
 
-        {hasMore && error === null && (
-          <Button variant="secondary" size="sm" onClick={loadMore} disabled={isLoading}>
-            {isLoading ? 'Loading…' : 'Show older orders'}
+        {hasNextPage && error === null && (
+          <Button variant="secondary" size="sm" onClick={loadMore} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Loading…' : 'Show older orders'}
           </Button>
         )}
       </div>

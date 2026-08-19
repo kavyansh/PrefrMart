@@ -1,17 +1,23 @@
-# Tender — mobile-first e-commerce demo
+# PrefrMart — mobile-first e-commerce demo
 
 A self-contained Amazon-style storefront built with Next.js 16 (App Router), React 19,
 TypeScript, Tailwind v4 and Prisma over local SQLite.
 
-No external services, no API keys, no payment provider. Everything — catalog, users,
-reviews, orders, product art — is generated locally from a fixed seed, so the demo runs
-fully offline and reproduces identically on any machine.
+No payment provider. The catalog, users, reviews, orders and product art are all generated
+locally from a fixed seed, so the data reproduces identically on any machine.
+
+Sign-in is the one exception, and it is deliberate. Alongside email and password, the app
+offers Google and GitHub through NextAuth, so **`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required** and the app refuses to boot
+without them. A clone no longer runs with no third-party account anywhere; you need to
+register two OAuth applications first. Email and password sign-in still works entirely
+locally once it boots.
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env          # then set AUTH_SECRET (see below)
+cp .env.example .env          # then fill in AUTH_SECRET and the OAuth keys (see below)
 npm run gen:images               # writes public/img/p/*.svg
 npm run db:migrate               # creates prisma/dev.db
 npm run db:seed                  # ~500 products, 2.7k reviews, 65 users, 6 orders
@@ -23,6 +29,18 @@ Generate a real `AUTH_SECRET` — the app refuses to boot with the placeholder:
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
+
+### OAuth applications
+
+Both are required. Register them once and paste the credentials into `.env`:
+
+| Provider | Where | Callback URL |
+|---|---|---|
+| Google | [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials) | `http://localhost:3000/api/auth/callback/google` |
+| GitHub | [github.com/settings/developers](https://github.com/settings/developers) | `http://localhost:3000/api/auth/callback/github` |
+
+The test suite supplies its own dummy values (see `vitest.config.ts`), so `npm test` and
+`npm run verify` never need real credentials.
 
 ### Demo sign-in
 
@@ -88,25 +106,55 @@ transaction, and the average is re-derived from an aggregate query rather than n
 transient failure cannot leave it permanently skewed.
 
 **Security.** A per-request nonce CSP is set in `src/proxy.ts` (Next 16's rename of
-`middleware.ts`); static headers are in `next.config.ts`. Sessions are HS256 JWTs in an
-httpOnly cookie — unreadable from JavaScript, so an XSS payload cannot exfiltrate one, which a
-token in localStorage would not survive. Verification pins `algorithms: ['HS256']`, without
-which an `alg: none` token forges a session. Passwords use `node:crypto` scrypt with per-user
-salts and constant-time comparison. `react/no-danger` is an ESLint error project-wide, with a
-single scoped exemption in `components/seo/JsonLd.tsx`. Every route handler parses its input
-through a Zod schema before touching the database.
+`middleware.ts`); static headers are in `next.config.ts`. Sessions are JWTs in an httpOnly
+cookie issued by NextAuth — unreadable from JavaScript, so an XSS payload cannot exfiltrate
+one, which a token in localStorage would not survive. The token carries only the user id;
+everything else is read from the database per request, so a renamed or deleted user cannot
+act on a stale payload. Passwords still use `node:crypto` scrypt with per-user salts and
+constant-time comparison, and existing hashes were not migrated — the format is unchanged.
+`react/no-danger` is an ESLint error project-wide, with a single scoped exemption in
+`components/seo/JsonLd.tsx`. Every route handler parses its input through a Zod schema before
+touching the database.
 
-**CSRF.** `SameSite=Lax` plus an origin check on every mutating route. Note the check compares
+**Auth is NextAuth v5** (`next-auth@5.0.0-beta.32`, exact-pinned — the API moves between
+betas). `src/lib/auth/config.ts` is the whole configuration. Two things are worth knowing:
+
+The rest of the app never touches it. `getSessionUserId()` and `getCurrentUser()` kept their
+signatures and became wrappers over `auth()`, so the twenty call sites across cart, orders,
+reviews, checkout and the account pages did not change — and the next swap need not touch
+them either.
+
+`Session` and `VerificationToken` exist in the schema and are **never written**. Sessions are
+JWTs, which the Credentials provider forces; the models are there only because
+`@auth/prisma-adapter` will not typecheck without them. Do not build on those tables.
+
+**CSRF.** `SameSite=Lax` plus an origin check on every mutating route the app owns; NextAuth's
+own endpoints add a double-submit token on top, which is what `tests/helpers/auth.ts` drives
+rather than side-stepping. Note the origin check compares
 `Origin` against the `Host` header, **not** `request.nextUrl.origin` — measured on Next 16.3.1,
 that property is normalised to `http://localhost:<port>` regardless of the host the request
 arrived on, so comparing against it rejects legitimate same-origin requests and breaks every
 form behind a proxy or real hostname. See `src/lib/api/request.ts`.
 
-**Login does not leak which accounts exist.** Unknown email and wrong password return the same
-message, and the unknown-email path still spends a scrypt verification against a throwaway
-hash — otherwise response time alone answers "is this address registered?", which is how
-target lists get built before a credential-stuffing run. Sign-up hashes the password *before*
-checking for a duplicate, for the same reason.
+**Login does not leak which accounts exist.** Unknown email and wrong password produce the
+identical outcome, and the unknown-email path still spends a scrypt verification against a
+throwaway hash — otherwise response time alone answers "is this address registered?", which is
+how target lists get built before a credential-stuffing run. Sign-up hashes the password
+*before* checking for a duplicate, for the same reason.
+
+OAuth added a third case that needs the same treatment: a user who signed up with Google has
+`passwordHash = null`, and returning early for them would be measurably faster than a real
+check — the same oracle by another route. `authorize()` burns a dummy hash there too.
+
+Nothing may widen that back out. NextAuth puts a thrown error's `code` in the redirect URL, so
+distinct codes for "no such account" and "wrong password" would rebuild the oracle even with
+one shared on-screen message. The only custom code is `rate_limited`, which says nothing about
+whether an account exists.
+
+**An OAuth email that already has a password account is rejected**, not linked
+(`OAuthAccountNotLinked`). `allowDangerousEmailAccountLinking` is off, and its name is
+accurate: turning it on means anyone who obtains an OAuth account at a victim's address
+inherits that victim's order history. The sign-in page tells them to use their password.
 
 **Route guards.** `src/proxy.ts` redirects unauthenticated requests to `/account`, `/checkout`
 and `/orders` to sign-in, carrying the destination so signing in resumes the journey. The guard
@@ -279,7 +327,7 @@ A 4xx other than 429 drops the queued order rather than retrying a rejection for
 network failure keeps its place, up to five attempts.
 
 **One IndexedDB opener.** `lib/idb.ts` owns the database version and store list. This exists because
-of a bug: the cart opened `tender` at v1 while the order queue opened it at v2, and IndexedDB refuses
+of a bug: the cart opened `prefrmart` at v1 while the order queue opened it at v2, and IndexedDB refuses
 to open at a lower version than it currently has — so whichever ran second failed, and which one that
 was depended on whether the shopper visited the cart or checked out first.
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { CART_STORE, openTenderDb, withStore } from '@/lib/idb';
+import { CART_STORE, openPrefrMartDb, withStore } from '@/lib/idb';
 import { normalizeLines } from '@/lib/cart/merge';
 import type { CartLine } from '@/lib/cart/types';
 
@@ -28,7 +28,7 @@ export async function readGuestCart(): Promise<CartLine[]> {
 export async function writeGuestCart(lines: CartLine[]): Promise<void> {
   const normalized = normalizeLines(lines);
 
-  const database = await openTenderDb();
+  const database = await openPrefrMartDb();
   if (database === null) return;
 
   await new Promise<void>((resolve) => {

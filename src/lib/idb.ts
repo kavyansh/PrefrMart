@@ -3,8 +3,8 @@
 /**
  * The one place the IndexedDB database is opened.
  *
- * This exists because of a bug: the cart opened `tender` at version 1 and the order queue opened it
- * at version 2. IndexedDB refuses to open a database at a *lower* version than it currently has, so
+ * This exists because of a bug: the cart opened `prefrmart` at version 1 and the order queue
+ * opened it at version 2. IndexedDB refuses to open a database at a *lower* version than it has, so
  * whichever module ran second failed with a VersionError — and which one that was depended on
  * whether the shopper visited the cart or checked out first. A shared opener makes the version and
  * the set of stores impossible to disagree about.
@@ -18,7 +18,7 @@
  * that situation should get a cart that does not persist, not a broken page.
  */
 
-export const DB_NAME = 'tender';
+export const DB_NAME = 'prefrmart';
 export const DB_VERSION = 2;
 
 export const CART_STORE = 'cart';
@@ -26,7 +26,7 @@ export const QUEUE_STORE = 'queued-orders';
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
-export function openTenderDb(): Promise<IDBDatabase | null> {
+export function openPrefrMartDb(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === 'undefined') return Promise.resolve(null);
   if (dbPromise !== null) return dbPromise;
 
@@ -66,7 +66,7 @@ export function withStore<T>(
   mode: IDBTransactionMode,
   work: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T | null> {
-  return openTenderDb().then(
+  return openPrefrMartDb().then(
     (database) =>
       new Promise<T | null>((resolve) => {
         if (database === null) {

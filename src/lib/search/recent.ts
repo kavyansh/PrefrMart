@@ -11,7 +11,7 @@
  * shopper there should lose their search history, not the search box.
  */
 
-const STORAGE_KEY = 'tender:recent-searches';
+const STORAGE_KEY = 'prefrmart:recent-searches';
 const MAX_RECENT = 6;
 
 export function readRecentSearches(): string[] {

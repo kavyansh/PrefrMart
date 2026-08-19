@@ -16,10 +16,10 @@
 
 const VERSION = 'v1';
 
-const SHELL_CACHE = `tender-shell-${VERSION}`;
-const STATIC_CACHE = `tender-static-${VERSION}`;
-const IMAGE_CACHE = `tender-images-${VERSION}`;
-const DATA_CACHE = `tender-data-${VERSION}`;
+const SHELL_CACHE = `prefrmart-shell-${VERSION}`;
+const STATIC_CACHE = `prefrmart-static-${VERSION}`;
+const IMAGE_CACHE = `prefrmart-images-${VERSION}`;
+const DATA_CACHE = `prefrmart-data-${VERSION}`;
 
 const OFFLINE_URL = '/offline';
 
@@ -84,8 +84,19 @@ self.addEventListener('activate', (event) => {
       const names = await caches.keys();
       await Promise.all(
         names
-          // Anything from a previous VERSION.
-          .filter((name) => name.startsWith('tender-') && !name.endsWith(VERSION))
+          .filter(
+            (name) =>
+              // Anything from a previous VERSION...
+              (name.startsWith('prefrmart-') && !name.endsWith(VERSION)) ||
+              /*
+               * ...plus every cache under the pre-rename `tender-` prefix, unconditionally.
+               * The version check deliberately does not apply to these: the rename did not bump
+               * VERSION, so `tender-shell-v1` ends with the *current* version and a shared
+               * `!endsWith(VERSION)` guard would spare it forever. Nothing writes this prefix
+               * again, so any cache carrying it is stale by definition.
+               */
+              name.startsWith('tender-'),
+          )
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();

@@ -1,7 +1,7 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/config';
 import { CATEGORY_BY_SLUG } from '@/lib/catalog/taxonomy';
 import { loginUrlFor } from '@/lib/auth/redirect';
-import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 /**
  * Per-request Content-Security-Policy with a nonce.
@@ -13,9 +13,10 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
  *
  * Static headers that need no nonce live in next.config.ts instead.
  *
- * This is Next 16's `proxy` convention (the former `middleware.ts`). It runs on the
- * Edge runtime, so this file must not import Node-only modules — notably
- * lib/auth/password.ts, which uses node:crypto scrypt.
+ * This is Next 16's `proxy` convention (the former `middleware.ts`). Since Next 16 it runs
+ * on the Node.js runtime — `runtime` is not configurable here and setting it throws — so
+ * unlike under the old Edge middleware, node:crypto and Prisma are both reachable from this
+ * file. That is what lets the NextAuth handler wrap it directly.
  *
  * IMPORTANT constraint this policy imposes on pages:
  * Next stamps the nonce onto its scripts (including 4 inline hydration scripts) only for
@@ -35,6 +36,7 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
  * category slugs are a closed static set, so checking them here is cheap and exact; the
  * page still calls `notFound()` to render the body.
  */
+
 /**
  * Routes that require a signed-in user.
  *
@@ -43,9 +45,9 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
  * check and briefly rendering someone's orders. The pages still verify the session for their
  * own data access; this is the outer gate, not the only one.
  *
- * The check verifies the JWT signature but does not hit the database, which keeps it Edge-safe
- * and cheap. A token for a since-deleted user passes here and is caught by `getCurrentUser()`
- * returning null.
+ * `request.auth` is decoded from the session JWT by the wrapper below; it involves no
+ * database query. A token for a since-deleted user passes here and is caught by
+ * `getCurrentUser()` returning null.
  */
 const PROTECTED_PREFIXES = ['/account', '/checkout', '/orders'] as const;
 
@@ -58,19 +60,16 @@ function requiresAuth(pathname: string): boolean {
 /** Signed-in users have no reason to see the sign-in form. */
 const AUTH_PAGES = ['/login', '/signup'] as const;
 
-function notFoundStatus(request: NextRequest): number | undefined {
-  const { pathname } = request.nextUrl;
+function notFoundStatus(pathname: string): number | undefined {
   if (!pathname.startsWith('/c/')) return undefined;
 
   const slug = pathname.slice('/c/'.length).replace(/\/$/, '');
   return CATEGORY_BY_SLUG.has(slug) ? undefined : 404;
 }
 
-export default async function proxy(request: NextRequest) {
+export default auth((request) => {
   const { pathname, search } = request.nextUrl;
-
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
+  const session = request.auth;
 
   if (session === null && requiresAuth(pathname)) {
     // Carries where they were going, so signing in resumes the journey instead of dumping
@@ -95,9 +94,10 @@ export default async function proxy(request: NextRequest) {
     // style injection is not a script-execution vector.
     "style-src 'self' 'unsafe-inline'",
     // data: for the blur placeholders, blob: for locally previewed image uploads.
-    "img-src 'self' data: blob:",
+    // https: because Google and GitHub serve user avatars from their own CDNs.
+    "img-src 'self' data: blob: https:",
     "font-src 'self'",
-    // Self only: this app talks to no third party.
+    // Self only: the OAuth handshake is a browser redirect, not a fetch from this page.
     `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
@@ -115,12 +115,12 @@ export default async function proxy(request: NextRequest) {
 
   const response = NextResponse.next({
     request: { headers: requestHeaders },
-    status: notFoundStatus(request),
+    status: notFoundStatus(pathname),
   });
   response.headers.set('content-security-policy', csp);
 
   return response;
-}
+});
 
 export const config = {
   /*

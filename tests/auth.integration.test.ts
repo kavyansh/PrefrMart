@@ -9,7 +9,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers/server';
 import { testDb } from './helpers/db';
-import { DEMO_PASSWORD as PASSWORD, forgetSession, loginAs } from './helpers/auth';
+import {
+  attemptLogin,
+  DEMO_PASSWORD as PASSWORD,
+  forgetSession,
+  loginAs,
+  SESSION_COOKIE_NAME,
+  signOutWith,
+} from './helpers/auth';
 
 let server: TestServer;
 let baseUrl: string;
@@ -82,30 +89,44 @@ describe('route guards', () => {
 });
 
 describe('sign-up', () => {
-  it('creates an account and signs the user straight in', async () => {
+  it('creates an account that can immediately sign in', async () => {
     const email = `signup-${Date.now()}@example.test`;
+    const password = 'a-good-long-password';
     createdEmails.push(email);
 
     const response = await fetch(`${baseUrl}/api/auth/signup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'New Person', email, password: 'a-good-long-password' }),
+      body: JSON.stringify({ name: 'New Person', email, password }),
     });
 
+    // 201 and NO session: NextAuth has no credentials registration flow, so this route
+    // creates the row and the client signs in separately. A cookie minted here would not
+    // be one NextAuth recognises.
     expect(response.status).toBe(201);
+    // No SESSION cookie. The proxy is wrapped by NextAuth, so responses do carry its
+    // csrf-token and callback-url cookies — those are plumbing, not a signed-in state.
+    expect(
+      response.headers.getSetCookie().filter((raw) => raw.startsWith(`${SESSION_COOKIE_NAME}=`)),
+    ).toEqual([]);
 
-    const cookie = response.headers.get('set-cookie') ?? '';
+    const signIn = await attemptLogin(baseUrl, email, password);
+    expect(signIn.ok, `sign-in after sign-up failed: ${signIn.location}`).toBe(true);
+
+    const sessionCookie = signIn.setCookies.find((raw) =>
+      raw.startsWith(`${SESSION_COOKIE_NAME}=`),
+    );
     // The three attributes that make the session survivable: unreadable from JS, not sent
     // on cross-site POSTs, and scoped to the whole app.
-    expect(cookie.toLowerCase()).toContain('httponly');
-    expect(cookie.toLowerCase()).toContain('samesite=lax');
-    expect(cookie).toContain('Path=/');
+    expect(sessionCookie?.toLowerCase()).toContain('httponly');
+    expect(sessionCookie?.toLowerCase()).toContain('samesite=lax');
+    expect(sessionCookie).toContain('Path=/');
 
     // The new session should work immediately.
-    const me = await fetch(`${baseUrl}/api/auth/me`, {
-      headers: { cookie: cookie.split(';')[0]! },
+    const me = await fetch(`${baseUrl}/api/auth/session`, {
+      headers: { cookie: sessionCookie!.split(';')[0]! },
     });
-    const payload = (await me.json()) as { user: { email: string } | null };
+    const payload = (await me.json()) as { user?: { email?: string } };
     expect(payload.user?.email).toBe(email);
   });
 
@@ -164,32 +185,73 @@ describe('sign-in', () => {
      * password" turns this endpoint into an account-existence oracle, which is how target
      * lists get built before a credential-stuffing run.
      */
-    const unknown = await fetch(`${baseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'nobody-here@example.test', password: PASSWORD }),
-    });
-    const wrongPassword = await fetch(`${baseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'asha@example.com', password: 'definitely-wrong' }),
-    });
+    const unknown = await attemptLogin(baseUrl, 'nobody-here@example.test', PASSWORD);
+    const wrongPassword = await attemptLogin(baseUrl, 'asha@example.com', 'definitely-wrong');
 
-    expect(unknown.status).toBe(401);
-    expect(wrongPassword.status).toBe(401);
+    expect(unknown.ok).toBe(false);
+    expect(wrongPassword.ok).toBe(false);
 
-    const a = (await unknown.json()) as { error: { message: string } };
-    const b = (await wrongPassword.json()) as { error: { message: string } };
-    expect(a.error.message).toBe(b.error.message);
+    /*
+     * Identical outcomes, byte for byte. NextAuth puts the failure in the redirect target,
+     * so that string is the thing that must not vary — a distinct `code` for either case
+     * would rebuild the oracle even though the on-screen message stayed the same.
+     */
+    expect(unknown.location).toBe(wrongPassword.location);
+    expect(unknown.location).not.toContain('nobody-here');
   });
 
-  it('rejects a cross-site sign-in attempt', async () => {
-    const response = await fetch(`${baseUrl}/api/auth/login`, {
+  it('rejects an account that has no password without leaking that fact', async () => {
+    /*
+     * New with OAuth: a user can exist with passwordHash = null. Returning early for that
+     * case would make it measurably faster than a real verification, which is the same
+     * oracle by another route — so authorize() burns a dummy hash first.
+     */
+    const email = `oauthonly-${Date.now()}@example.test`;
+    createdEmails.push(email);
+    await testDb.user.create({ data: { email, name: 'OAuth Only', passwordHash: null } });
+
+    const attempt = await attemptLogin(baseUrl, email, 'any-password-at-all');
+    const unknown = await attemptLogin(baseUrl, `absent-${Date.now()}@example.test`, PASSWORD);
+
+    expect(attempt.ok).toBe(false);
+    expect(attempt.location).toBe(unknown.location);
+  });
+
+  it('throttles repeated attempts from one caller', async () => {
+    /*
+     * Ten attempts per fifteen minutes, keyed by caller. Pinned to one address so the bucket
+     * actually fills — the helpers otherwise present a distinct address per identity.
+     *
+     * The rejection must still not say whether the account exists.
+     */
+    const ip = '203.0.113.99';
+    const attempts = [];
+    for (let index = 0; index < 12; index += 1) {
+      attempts.push(await attemptLogin(baseUrl, 'asha@example.com', 'wrong-password', ip));
+    }
+
+    expect(attempts.every((attempt) => !attempt.ok)).toBe(true);
+    expect(
+      attempts.some((attempt) => attempt.location?.includes('rate_limited')),
+      'the eleventh attempt onwards should be throttled',
+    ).toBe(true);
+  });
+
+  it('rejects a sign-in that carries no CSRF token', async () => {
+    /*
+     * The double-submit check, which is what a cross-site POST cannot satisfy: an attacker's
+     * page can make the browser send the cookie, but cannot read it to echo the token back.
+     */
+    const response = await fetch(`${baseUrl}/api/auth/callback/credentials`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
-      body: JSON.stringify({ email: 'asha@example.com', password: PASSWORD }),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ email: 'asha@example.com', password: PASSWORD }),
+      redirect: 'manual',
     });
-    expect(response.status).toBe(403);
+
+    expect(response.headers.get('location')).toContain('MissingCSRF');
+    const issued = response.headers.getSetCookie();
+    expect(issued.some((raw) => raw.startsWith(`${SESSION_COOKIE_NAME}=`))).toBe(false);
   });
 
   it('clears the session on sign-out', async () => {
@@ -197,21 +259,31 @@ describe('sign-in', () => {
     const cookie = await login('sofia@example.com');
     forgetSession('sofia@example.com');
 
-    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
-      method: 'POST',
-      headers: { cookie },
-    });
-    expect(logout.status).toBe(200);
+    const { setCookies } = await signOutWith(baseUrl, cookie);
 
-    // The cleared cookie must expire immediately, not merely be blanked.
-    const cleared = logout.headers.get('set-cookie') ?? '';
+    const cleared = setCookies.find((raw) => raw.startsWith(`${SESSION_COOKIE_NAME}=`));
+    expect(cleared, 'sign-out must clear the session cookie').toBeDefined();
+    // It must expire immediately, not merely be blanked.
     expect(cleared).toMatch(/Max-Age=0|Expires=/i);
   });
 
-  it('refuses sign-out over GET', async () => {
-    // A GET logout is triggerable by any third-party <img src>, signing users out uninvited.
-    const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'GET' });
-    expect(response.status).toBe(405);
+  it('does not sign out on a GET', async () => {
+    /*
+     * A GET that destroyed the session would be triggerable by any third-party `<img src>`,
+     * signing users out uninvited. NextAuth answers GET with a confirmation page instead, so
+     * the property to assert is that the session still works afterwards — not the status.
+     */
+    const cookie = await login('meera@example.com');
+
+    const response = await fetch(`${baseUrl}/api/auth/signout`, {
+      method: 'GET',
+      headers: { cookie },
+    });
+    expect(response.status).toBe(200);
+
+    const after = await fetch(`${baseUrl}/api/auth/session`, { headers: { cookie } });
+    const payload = (await after.json()) as { user?: { email?: string } };
+    expect(payload.user?.email).toBe('meera@example.com');
   });
 });
 
@@ -318,7 +390,7 @@ describe('account data isolation', () => {
 
   it('keeps private responses out of shared caches', async () => {
     const cookie = await login('asha@example.com');
-    for (const path of ['/api/account/orders', '/api/account/profile', '/api/auth/me']) {
+    for (const path of ['/api/account/orders', '/api/account/profile', '/api/auth/session']) {
       const response = await fetch(`${baseUrl}${path}`, { headers: { cookie } });
       expect(response.headers.get('cache-control'), path).toContain('private');
     }

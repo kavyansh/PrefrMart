@@ -1,28 +1,26 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 
 /**
  * Sign out.
  *
- * A POST, not a link: a GET logout endpoint can be triggered by any third-party page embedding
- * `<img src="/api/auth/logout">`, signing users out uninvited. That is why this needs to be a
- * client component at all — a plain anchor would be the wrong method.
+ * A POST, not a link: a GET sign-out endpoint can be triggered by any third-party page
+ * embedding `<img src="…">`, signing users out uninvited. NextAuth's `signOut()` posts to its
+ * own endpoint and carries the CSRF token with it, which is why this must be a client
+ * component — a plain anchor would be the wrong method.
  */
 export function LogoutButton({ variant = 'secondary' }: { variant?: 'secondary' | 'ghost' }) {
-  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
   async function handleLogout() {
     setIsPending(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      // refresh() first: without it the router cache still holds the signed-in render of
-      // the pages we are navigating to.
-      router.refresh();
-      router.replace('/');
+      // A full navigation rather than a client-side replace: it discards the router cache,
+      // which otherwise still holds the signed-in render of the pages we land on.
+      await signOut({ redirectTo: '/' });
     } finally {
       setIsPending(false);
     }

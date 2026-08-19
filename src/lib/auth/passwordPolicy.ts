@@ -1,9 +1,11 @@
 /**
  * Password length policy, kept separate from `password.ts`.
  *
- * `password.ts` imports `node:crypto`, which cannot be bundled for the Edge runtime. The
- * validation schemas need these limits and are reachable from Edge code, so the constants
- * live in this dependency-free module.
+ * Originally this split existed because `password.ts` imports `node:crypto`, which could not
+ * be bundled for the Edge runtime that middleware once ran on. Since Next 16 the proxy runs
+ * on Node, so that constraint is gone — but the split is still worth keeping: the validation
+ * schemas need these two numbers and nothing else, and a dependency-free module means
+ * importing them never drags scrypt along.
  *
  * The maximum is not arbitrary: scrypt cost scales with input, so an unbounded password is a
  * cheap way to make the server do expensive work.

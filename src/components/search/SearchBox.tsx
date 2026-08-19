@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { addRecentSearch, clearRecentSearches, readRecentSearches } from '@/lib/search/recent';
@@ -26,14 +27,14 @@ export function SearchBox({ initialQuery = '' }: { initialQuery?: string }) {
   const listboxId = useId();
 
   const [query, setQuery] = useState(initialQuery);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  /** What the query key follows. Lags `query` by DEBOUNCE_MS so a keystroke is not a request. */
+  const [debounced, setDebounced] = useState(initialQuery.trim());
   const [recent, setRecent] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   /*
    * Recent searches are read when the dropdown is about to open, not in a mount effect.
@@ -48,39 +49,36 @@ export function SearchBox({ initialQuery = '' }: { initialQuery?: string }) {
     setIsOpen(true);
   }, []);
 
-  // Debounced fetch. Each keystroke aborts the previous request, so a fast typist does not race
-  // several responses and see an older one win.
+  // Debounce only. The request itself, its cancellation and its caching are the query's job.
   useEffect(() => {
-    const trimmed = query.trim();
-    // Nothing to fetch below the threshold. `visibleSuggestions` below derives the empty list, so
-    // there is no state to clear here.
-    if (trimmed.length < MIN_QUERY_LENGTH) return;
-
-    const timer = setTimeout(() => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      fetch(`/api/search/suggest?q=${encodeURIComponent(trimmed)}`, {
-        signal: controller.signal,
-        headers: { accept: 'application/json' },
-      })
-        .then((response) => (response.ok ? response.json() : { suggestions: [] }))
-        .then((payload: { suggestions?: Suggestion[] }) => {
-          if (controller.signal.aborted) return;
-          setSuggestions(payload.suggestions ?? []);
-        })
-        .catch(() => {
-          // Offline or a failed request: no suggestions, but the form still submits.
-        });
-    }, DEBOUNCE_MS);
-
+    const timer = setTimeout(() => setDebounced(query.trim()), DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query]);
 
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
+  /*
+   * Keyed by the debounced text, which is what makes typeahead cheap: typing "headphones" leaves
+   * every prefix cached, so backspacing shows earlier results instantly and issues no request at
+   * all. The old version refetched every prefix on the way back.
+   *
+   * A long staleTime is right here — the suggestion set is derived from a fixed catalog and does
+   * not move while someone is typing.
+   */
+  const { data } = useQuery({
+    queryKey: ['search-suggest', debounced],
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/search/suggest?q=${encodeURIComponent(debounced)}`, {
+        signal,
+        headers: { accept: 'application/json' },
+      });
+      // Offline or a failed request: no suggestions, but the form still submits.
+      if (!response.ok) return { suggestions: [] as Suggestion[] };
+      return (await response.json()) as { suggestions?: Suggestion[] };
+    },
+    enabled: debounced.length >= MIN_QUERY_LENGTH,
+    staleTime: 5 * 60_000,
+  });
+
+  const suggestions = data?.suggestions ?? [];
 
   // Close when focus or a click leaves the whole control.
   useEffect(() => {

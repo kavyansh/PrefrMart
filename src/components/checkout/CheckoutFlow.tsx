@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
-import { useCart } from '@/components/cart/CartProvider';
+import { useCartIsLoading, useCartView, useRefreshCart } from '@/lib/cart/store';
 import { AddressStep, type AddressDraft } from '@/components/checkout/AddressStep';
 import { DeliveryStep } from '@/components/checkout/DeliveryStep';
 import { PaymentStep, type PaymentDraft } from '@/components/checkout/PaymentStep';
@@ -57,7 +57,9 @@ export function CheckoutFlow({
   defaultName: string;
 }) {
   const router = useRouter();
-  const { view, isLoading, refresh } = useCart();
+  const view = useCartView();
+  const isLoading = useCartIsLoading();
+  const refresh = useRefreshCart();
 
   const [step, setStep] = useState<Step>('address');
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(

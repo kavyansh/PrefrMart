@@ -5,7 +5,13 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { QuantityStepper } from '@/components/cart/QuantityStepper';
-import { useCart } from '@/components/cart/CartProvider';
+import {
+  useCartError,
+  useCartIsLoading,
+  useCartView,
+  useRemoveItem,
+  useSetQty,
+} from '@/lib/cart/store';
 import { imageSrc } from '@/lib/catalog/taxonomy';
 import {
   FREE_SHIPPING_THRESHOLD_CENTS,
@@ -25,7 +31,11 @@ import {
  * or changing a quantity under the shopper reads as a bug and costs their trust in the total.
  */
 export function CartContents() {
-  const { view, isLoading, error, setQty, removeItem } = useCart();
+  const view = useCartView();
+  const isLoading = useCartIsLoading();
+  const error = useCartError();
+  const setQty = useSetQty();
+  const removeItem = useRemoveItem();
 
   if (isLoading && view === null) {
     return <CartSkeleton />;

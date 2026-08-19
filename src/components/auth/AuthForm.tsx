@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { MIN_PASSWORD_LENGTH } from '@/lib/auth/passwordPolicy';
+import { signInMessage } from '@/lib/auth/signInErrors';
 
 /**
  * Shared sign-in / sign-up form.
@@ -15,13 +17,26 @@ import { MIN_PASSWORD_LENGTH } from '@/lib/auth/passwordPolicy';
  *
  * Field errors returned by the server are mapped straight onto the inputs, so a rejection
  * lands next to the thing that caused it rather than as a banner the user has to interpret.
+ *
+ * Sign-up is two requests: POST /api/auth/signup creates the row, then `signIn` establishes
+ * the session. NextAuth has no registration flow for credentials, and a cookie it did not
+ * mint would not be one NextAuth recognises.
  */
 
 type Mode = 'login' | 'signup';
 
 type FieldErrors = Partial<Record<'email' | 'password' | 'name', string>>;
 
-export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
+export function AuthForm({
+  mode,
+  next,
+  initialError,
+}: {
+  mode: Mode;
+  next: string;
+  /** NextAuth error type from `?error=`, set when an OAuth attempt bounced back here. */
+  initialError?: string;
+}) {
   const router = useRouter();
   const isSignup = mode === 'signup';
 
@@ -29,7 +44,9 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(
+    initialError === undefined ? null : signInMessage(initialError),
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function validate(): FieldErrors {
@@ -56,33 +73,46 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/auth/${mode}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(
-          isSignup
-            ? { name: name.trim(), email: email.trim(), password }
-            : { email: email.trim(), password },
-        ),
+      if (isSignup) {
+        // Create the row first. Field-level rejections (duplicate email, short password)
+        // come back from here, not from signIn.
+        const response = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: { message?: string; fields?: Record<string, string> } }
+            | null;
+
+          if (payload?.error?.fields) setFieldErrors(payload.error.fields as FieldErrors);
+          setFormError(payload?.error?.message ?? 'Something went wrong. Please try again.');
+          return;
+        }
+      }
+
+      const result = await signIn('credentials', {
+        email: email.trim(),
+        password,
+        // Handle the outcome here rather than letting NextAuth navigate, so a failure lands
+        // as an inline message instead of a round-trip through the error page.
+        redirect: false,
       });
 
-      if (response.ok) {
+      if (result.ok && result.error === undefined) {
         /*
-         * The session cookie is set by the response. `refresh()` before `replace()` discards
-         * the router cache, which otherwise still holds the signed-out render of the
-         * destination and would show it for a beat after signing in.
+         * `refresh()` before `replace()` discards the router cache, which otherwise still
+         * holds the signed-out render of the destination and would show it for a beat
+         * after signing in.
          */
         router.refresh();
         router.replace(next);
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: { message?: string; fields?: Record<string, string> } }
-        | null;
-
-      if (payload?.error?.fields) setFieldErrors(payload.error.fields as FieldErrors);
-      setFormError(payload?.error?.message ?? 'Something went wrong. Please try again.');
+      setFormError(signInMessage(result.error, result.code));
     } catch {
       setFormError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -91,63 +121,111 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      {isSignup && (
-        <Field
-          id="name"
-          label="Your name"
-          value={name}
-          onChange={setName}
-          autoComplete="name"
-          error={fieldErrors.name}
-        />
-      )}
-
-      <Field
-        id="email"
-        label="Email"
-        type="email"
-        value={email}
-        onChange={setEmail}
-        // Tells password managers and mobile keyboards exactly what this is.
-        autoComplete={isSignup ? 'email' : 'username'}
-        error={fieldErrors.email}
-      />
-
-      <Field
-        id="password"
-        label="Password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        autoComplete={isSignup ? 'new-password' : 'current-password'}
-        error={fieldErrors.password}
-        hint={isSignup ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
-      />
-
+    <>
+      {/*
+        Above the provider buttons rather than beside the submit button, because it now
+        reports two different journeys: a rejected password, and an OAuth attempt bounced
+        back here with ?error=. role="alert" announces it without moving focus.
+      */}
       {formError !== null && (
-        // role="alert" so it is announced when it appears, without moving focus.
-        <p role="alert" className="mb-3 rounded-md bg-danger-soft p-2.5 text-sm text-danger">
+        <p role="alert" className="mb-4 rounded-md bg-danger-soft p-2.5 text-sm text-danger">
           {formError}
         </p>
       )}
 
-      <Button type="submit" fullWidth size="lg" disabled={isSubmitting}>
-        {isSubmitting ? 'Please wait…' : isSignup ? 'Create account' : 'Sign in'}
-      </Button>
+      {/*
+        Providers first: someone who has an account through Google is looking for the button,
+        not the fields. Outside the <form> so they carry no submit semantics.
+      */}
+      <div className="mb-5 grid gap-2">
+        <ProviderButton provider="google" label="Continue with Google" next={next} />
+        <ProviderButton provider="github" label="Continue with GitHub" next={next} />
+      </div>
 
-      <p className="mt-4 text-center text-sm text-fg-muted">
-        {isSignup ? 'Already have an account? ' : 'New here? '}
-        <Link
-          // Carry the destination across, so switching form does not lose where they
-          // were originally headed.
-          href={`${isSignup ? '/login' : '/signup'}?next=${encodeURIComponent(next)}`}
-          className="text-info underline"
-        >
-          {isSignup ? 'Sign in' : 'Create an account'}
-        </Link>
-      </p>
-    </form>
+      <div className="mb-5 flex items-center gap-3">
+        <span aria-hidden="true" className="h-px flex-1 bg-border" />
+        <span className="text-xs text-fg-subtle">or</span>
+        <span aria-hidden="true" className="h-px flex-1 bg-border" />
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate>
+        {isSignup && (
+          <Field
+            id="name"
+            label="Your name"
+            value={name}
+            onChange={setName}
+            autoComplete="name"
+            error={fieldErrors.name}
+          />
+        )}
+
+        <Field
+          id="email"
+          label="Email"
+          type="email"
+          value={email}
+          onChange={setEmail}
+          // Tells password managers and mobile keyboards exactly what this is.
+          autoComplete={isSignup ? 'email' : 'username'}
+          error={fieldErrors.email}
+        />
+
+        <Field
+          id="password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={setPassword}
+          autoComplete={isSignup ? 'new-password' : 'current-password'}
+          error={fieldErrors.password}
+          hint={isSignup ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
+        />
+
+        <Button type="submit" fullWidth size="lg" disabled={isSubmitting}>
+          {isSubmitting ? 'Please wait…' : isSignup ? 'Create account' : 'Sign in'}
+        </Button>
+
+        <p className="mt-4 text-center text-sm text-fg-muted">
+          {isSignup ? 'Already have an account? ' : 'New here? '}
+          <Link
+            // Carry the destination across, so switching form does not lose where they
+            // were originally headed.
+            href={`${isSignup ? '/login' : '/signup'}?next=${encodeURIComponent(next)}`}
+            className="text-info underline"
+          >
+            {isSignup ? 'Sign in' : 'Create an account'}
+          </Link>
+        </p>
+      </form>
+    </>
+  );
+}
+
+/**
+ * Starts an OAuth journey. A full redirect, not `redirect: false` — the handshake leaves the
+ * site and comes back, so there is no in-page result to handle. A rejection returns to this
+ * page as `?error=`, which the login page reads and passes in as `initialError`.
+ */
+function ProviderButton({
+  provider,
+  label,
+  next,
+}: {
+  provider: 'google' | 'github';
+  label: string;
+  next: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="lg"
+      fullWidth
+      onClick={() => void signIn(provider, { redirectTo: next })}
+    >
+      {label}
+    </Button>
   );
 }
 

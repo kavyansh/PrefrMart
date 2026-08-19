@@ -19,7 +19,7 @@ export async function Header() {
     <header className="sticky top-0 z-40 bg-ink text-fg-inverse">
       <div className="mx-auto flex h-(--spacing-header) max-w-(--container-page) items-center gap-3 px-3 sm:px-4">
         <Link href="/" className="shrink-0 text-lg font-semibold tracking-tight">
-          Tender
+          PrefrMart
         </Link>
 
         {/*

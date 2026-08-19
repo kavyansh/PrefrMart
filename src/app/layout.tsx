@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
-import { CartProvider } from '@/components/cart/CartProvider';
+import { CartSync } from '@/components/cart/CartSync';
+import { QueryProvider } from '@/components/query/QueryProvider';
 import { OfflineBanner } from '@/components/pwa/OfflineBanner';
 import { QueuedOrderReplayer } from '@/components/pwa/QueuedOrderReplayer';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
@@ -8,17 +9,17 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Tender — everyday essentials, honestly priced',
-    template: '%s · Tender',
+    default: 'PrefrMart — everyday essentials, honestly priced',
+    template: '%s · PrefrMart',
   },
   description:
     'A mobile-first storefront demo: browse a large catalog, search, review products, and check out.',
-  applicationName: 'Tender',
+  applicationName: 'PrefrMart',
   formatDetection: { telephone: false },
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: 'Tender',
+    title: 'PrefrMart',
     statusBarStyle: 'black-translucent',
   },
 };
@@ -37,7 +38,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   /*
-   * Read the session here so the cart provider knows which mode to run in. Only the id is passed
+   * Read the session here so the cart store knows which mode to run in. Only the id is passed
    * down — enough to decide "local store or server cart" and to detect a change of identity, and
    * nothing a client component has any business knowing beyond that.
    */
@@ -56,7 +57,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           Skip to main content
         </a>
-        <CartProvider userId={userId}>
+        <QueryProvider>
+          <CartSync userId={userId} />
           {/*
             Both banners sit above the header so they push content down rather than covering it —
             an overlay on a sticky header hides the search box exactly when someone is trying to
@@ -65,7 +67,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <OfflineBanner />
           <QueuedOrderReplayer />
           {children}
-        </CartProvider>
+        </QueryProvider>
         <ServiceWorkerRegistrar />
       </body>
     </html>

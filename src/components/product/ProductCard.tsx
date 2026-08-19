@@ -28,9 +28,19 @@ export function ProductCard({
 
   return (
     <article
+      // Read by ProductList to measure one card's height, which is what the row virtualizer
+      // estimates row size from.
+      data-card=""
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-lg border border-border bg-surface',
         'transition-shadow duration-(--duration-base) hover:shadow-md',
+        /*
+         * Containment for everything below the first row. `content-visibility: auto` never
+         * skips on-screen content, so applying it here would be harmless — but it has
+         * documented interactions with LCP element detection, and the LCP candidate is one of
+         * the `priority` cards. Excluding them removes the question entirely.
+         */
+        !priority && 'offscreen-skip',
       )}
     >
       <Link

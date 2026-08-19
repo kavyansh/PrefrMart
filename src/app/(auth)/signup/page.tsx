@@ -18,7 +18,7 @@ export default async function SignupPage({
   return (
     <main id="main" className="mx-auto max-w-sm px-4 py-10">
       <Link href="/" className="mb-8 block text-center text-xl font-semibold">
-        Tender
+        PrefrMart
       </Link>
 
       <h1 className="mb-1 text-xl font-semibold">Create an account</h1>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { useCart } from '@/components/cart/CartProvider';
+import { useAddItem } from '@/lib/cart/store';
 
 /**
  * Add to cart, from the product page.
@@ -21,7 +21,7 @@ export function AddToCartButton({
   /** Used only in the announcement, so it names what was added. */
   productTitle: string;
 }) {
-  const { addItem } = useCart();
+  const addItem = useAddItem();
   const [state, setState] = useState<'idle' | 'adding' | 'added'>('idle');
 
   if (stock === 0) {

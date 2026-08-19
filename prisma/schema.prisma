@@ -13,18 +13,78 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime @default(now())
+  id    String @id @default(cuid())
+  email String @unique
+  // Nullable since NextAuth: a user who only ever signs in with Google has no password.
+  // Every read must handle null — see the dummy-hash path in lib/auth/config.ts, which
+  // exists so that "account has no password" is not measurably faster than a real check.
+  passwordHash  String?
+  name          String
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
 
   reviews   Review[]
   addresses Address[]
   carts     Cart[]
   orders    Order[]
+  accounts  Account[]
+  sessions  Session[]
 
   @@index([createdAt, id])
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js (NextAuth) adapter models
+// ---------------------------------------------------------------------------
+
+/// Links a User to an external identity provider. This one IS written at runtime:
+/// it is how a returning Google or GitHub user is matched back to their account.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // The uniqueness that makes "this Google identity is already linked" a database
+  // guarantee rather than a check-then-act race.
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// NEVER WRITTEN AT RUNTIME. Sessions are JWTs (forced: the Credentials provider does not
+/// support database sessions), so the adapter's session methods are never called. The model
+/// exists only because @auth/prisma-adapter references `prisma.session` and will not
+/// typecheck without it. Do not build anything on this table.
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// NEVER WRITTEN AT RUNTIME. Same reason as Session: required for the adapter to typecheck.
+/// It would carry email sign-in tokens, and there is no email provider configured.
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 model Address {
