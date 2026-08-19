@@ -10,8 +10,8 @@
 
 process.loadEnvFile('.env');
 
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
-import { PrismaClient } from '../src/generated/prisma/client.js';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Prisma, PrismaClient } from '../src/generated/prisma/client.js';
 import { CATEGORIES, IMAGES_PER_CATEGORY, imageKey } from '../src/lib/catalog/taxonomy.ts';
 import { hashPassword } from '../src/lib/auth/password.ts';
 import { computeTotals, type DeliveryOption } from '../src/lib/money.ts';
@@ -47,7 +47,11 @@ const DEMO_USERS = [
   { email: 'sofia@example.com', name: 'Sofia Almeida' },
 ] as const;
 
-const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! });
+// Direct (non-pooler) connection: the seed is one long batch of writes, which is exactly the
+// workload pgbouncer transaction pooling handles worst.
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL!,
+});
 const db = new PrismaClient({ adapter });
 
 // ---------------------------------------------------------------------------
@@ -342,19 +346,39 @@ async function main(): Promise<void> {
 
   // --- denormalised rating aggregates -------------------------------------
   console.log('Computing rating aggregates…');
-  // Batched in a transaction: 500 individual UPDATEs outside one is ~20x slower.
-  const updates = [...ratingTally.entries()].map(([productId, tally]) =>
-    db.product.update({
-      where: { id: productId },
-      data: {
-        // One decimal place is all the UI ever displays.
-        ratingAvg: Math.round((tally.sum / tally.count) * 10) / 10,
-        ratingCount: tally.count,
-      },
-    }),
+  /*
+   * One bulk UPDATE ... FROM (VALUES ...) rather than 500 `product.update()` calls in a
+   * transaction.
+   *
+   * The per-row version was correct under SQLite, where a write is a local function call. Against
+   * a network database every one of those 500 updates is a separate round trip, and Prisma sends
+   * them sequentially even inside `$transaction([...])` — so the batch took over two minutes from
+   * here and blew the transaction timeout no matter how high it was raised. Raising it further
+   * would have made the seed slow rather than broken, which is not much of a fix.
+   *
+   * This is the only raw SQL in the project. It earns the exception: it is a seed-time bulk
+   * write, it is one round trip instead of five hundred, and it stays atomic without needing an
+   * explicit transaction at all. Values are still parameterised — `Prisma.join` emits bind
+   * placeholders, not interpolated text.
+   *
+   * The casts are required: Postgres types a bare VALUES parameter as `text`, which will not
+   * compare against or assign to a double/integer column.
+   */
+  const tallies = [...ratingTally.entries()];
+  const rows = tallies.map(([productId, tally]) =>
+    Prisma.sql`(${productId}, ${
+      // One decimal place is all the UI ever displays.
+      Math.round((tally.sum / tally.count) * 10) / 10
+    }::double precision, ${tally.count}::integer)`,
   );
-  await db.$transaction(updates);
-  console.log(`  ${updates.length} products have ratings`);
+
+  await db.$executeRaw`
+    UPDATE "Product" AS p
+    SET "ratingAvg" = v.avg, "ratingCount" = v.count
+    FROM (VALUES ${Prisma.join(rows)}) AS v(id, avg, count)
+    WHERE p.id = v.id
+  `;
+  console.log(`  ${tallies.length} products have ratings`);
 
   // --- orders -------------------------------------------------------------
   console.log('Creating orders…');

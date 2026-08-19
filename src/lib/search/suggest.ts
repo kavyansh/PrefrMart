@@ -41,7 +41,11 @@ export async function getSuggestions(rawQuery: string): Promise<Suggestion[]> {
 
   const [brands, products] = await Promise.all([
     db.product.findMany({
-      where: { brand: { contains: query } },
+      // `mode: 'insensitive'` is load-bearing on Postgres, whose LIKE is case-sensitive — unlike
+      // SQLite's, which this originally relied on. Without it a lowercased query never matches a
+      // capitalised brand and the brand suggestions silently vanish. `searchText` below needs no
+      // such treatment: the seed stores it pre-lowercased.
+      where: { brand: { contains: query, mode: 'insensitive' } },
       // distinct is what stops one brand appearing once per product it sells.
       distinct: ['brand'],
       select: { brand: true },

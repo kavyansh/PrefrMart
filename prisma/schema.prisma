@@ -1,4 +1,4 @@
-// Local-only SQLite schema. Money is stored in integer cents everywhere to avoid
+// Postgres (Neon) schema. Money is stored in integer cents everywhere to avoid
 // float rounding; `lib/money.ts` owns all formatting.
 
 generator client {
@@ -9,7 +9,7 @@ generator client {
 // Prisma 7: the connection URL lives in prisma.config.ts (for migrate/introspect)
 // and is passed to PrismaClient via a driver adapter at runtime. See src/lib/db.ts.
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
@@ -125,7 +125,9 @@ model Product {
   title       String
   brand       String
   description String
-  bullets     String // JSON string[] — SQLite has no native array type
+  // JSON-encoded string[]. Kept as text rather than a native Postgres array: it was written
+  // that way under SQLite, every reader already parses it, and nothing queries into it.
+  bullets     String
   specs       String // JSON Record<string, string>
   priceCents  Int
   // Fake "list price" so the UI can show a strike-through discount. Null = no discount.
@@ -141,7 +143,8 @@ model Product {
   ratingAvg   Float @default(0)
   ratingCount Int   @default(0)
 
-  // Lowercased "title brand category bullets" blob for LIKE-based search.
+  // Lowercased "title brand category bullets" blob for LIKE-based search. Postgres LIKE is
+  // case-sensitive, so the lowercasing here is load-bearing — see lib/catalog/products.ts.
   searchText String
 
   category   Category    @relation(fields: [categoryId], references: [id])

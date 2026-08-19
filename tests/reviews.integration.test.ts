@@ -242,19 +242,32 @@ describe('aggregate consistency', () => {
     });
     expect(products.length).toBeGreaterThan(100);
 
+    /*
+     * One groupBy rather than an aggregate() per product. The per-product loop was fine against
+     * a local SQLite file, where a query is a function call; against a network database it is 500
+     * sequential round trips and takes longer than any sane test timeout allows.
+     *
+     * The invariant checked is identical — this only changes how many times we ask.
+     */
+    const grouped = await testDb.review.groupBy({
+      by: ['productId'],
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    const actual = new Map(grouped.map((row) => [row.productId, row]));
+
     const mismatches: string[] = [];
     for (const product of products) {
-      const aggregate = await testDb.review.aggregate({
-        where: { productId: product.id },
-        _avg: { rating: true },
-        _count: { _all: true },
-      });
-      const expectedAvg = Math.round((aggregate._avg.rating ?? 0) * 10) / 10;
+      // A product with no reviews is absent from the grouping, and must read as 0/0 rather than
+      // being skipped — "never reviewed" is exactly the case where a stale aggregate would hide.
+      const aggregate = actual.get(product.id);
+      const expectedAvg = Math.round(((aggregate?._avg.rating ?? 0) as number) * 10) / 10;
+      const expectedCount = aggregate?._count._all ?? 0;
 
-      if (expectedAvg !== product.ratingAvg || aggregate._count._all !== product.ratingCount) {
+      if (expectedAvg !== product.ratingAvg || expectedCount !== product.ratingCount) {
         mismatches.push(
           `${product.slug}: stored ${product.ratingAvg}/${product.ratingCount}, ` +
-            `actual ${expectedAvg}/${aggregate._count._all}`,
+            `actual ${expectedAvg}/${expectedCount}`,
         );
       }
     }

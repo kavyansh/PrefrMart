@@ -6,11 +6,15 @@
 
 process.loadEnvFile('.env');
 
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
 
 export const testDb = new PrismaClient({
-  adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! }),
+  // Direct connection, matching the seed: tests write and clean up, and pooled DDL/tx behaviour
+  // is the wrong thing to be debugging inside a test failure.
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL!,
+  }),
 });
 
 /**

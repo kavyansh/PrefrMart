@@ -10,6 +10,21 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
 
     /*
+     * Generous timeouts, because the database is now across a network.
+     *
+     * Vitest's 5s default was comfortable when the integration suites talked to a local SQLite
+     * file. Against Neon every query is a round trip — a couple of hundred milliseconds from a
+     * developer machine outside us-east-1 — and a test that places an order makes a dozen of
+     * them, so the default started failing tests that were behaving perfectly well.
+     *
+     * These are deliberately far above what a healthy run needs (the suite passes well inside
+     * them from CI, where latency is ~1ms) so they still catch a genuine hang. The unit tests are
+     * unaffected: they touch no database and finish in milliseconds regardless.
+     */
+    testTimeout: 30_000,
+    hookTimeout: 120_000,
+
+    /*
      * OAuth credentials are required at boot (lib/env.ts), so the suite supplies its own.
      * They must live here rather than in a setup file: the integration suites spawn a real
      * `next start` through tests/helpers/server.ts, which inherits process.env from this
@@ -26,7 +41,7 @@ export default defineConfig({
     /*
      * Test files run one at a time.
      *
-     * The integration suites share a single SQLite file and each boots its own server. Run in
+     * The integration suites share a single database and each boots its own server. Run in
      * parallel they interfere in ways that look like product bugs: the reviews suite writes
      * reviews, which changes a product's ratingAvg, which shifts the keyset window the
      * pagination suite is walking under `sort=rating` — so a row gets skipped and
