@@ -1,5 +1,7 @@
 # PrefrMart — mobile-first e-commerce demo 
 
+**Live demo: https://prefrmart.yashsrivastava.link/**
+
 <img width="3418" height="1994" alt="image" src="https://github.com/user-attachments/assets/aff1cf80-5836-4d00-88c9-84cc7aaaa14c" />
 
 
