@@ -1,4 +1,7 @@
-# PrefrMart — mobile-first e-commerce demo
+# PrefrMart — mobile-first e-commerce demo 
+
+<img width="3418" height="1994" alt="image" src="https://github.com/user-attachments/assets/aff1cf80-5836-4d00-88c9-84cc7aaaa14c" />
+
 
 A self-contained Amazon-style storefront built with Next.js 16 (App Router), React 19,
 TypeScript, Tailwind v4 and Prisma over local SQLite.
