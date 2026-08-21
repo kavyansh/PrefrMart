@@ -55,4 +55,18 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+
+  /*
+   * Component tests stand in for `next/image` with a plain `<img>`.
+   *
+   * The rule is about shipped pages — LCP and bandwidth — and neither exists in jsdom, which
+   * cannot evaluate the layout `next/image` needs anyway. Scoped to test files so the rule keeps
+   * doing its job everywhere it means something.
+   */
+  {
+    files: ['**/*.test.tsx'],
+    rules: {
+      '@next/next/no-img-element': 'off',
+    },
+  },
 );
